@@ -193,6 +193,7 @@ export class VideoExporter {
             outro,
             aspectRatio,
             captionStyle,
+            resolutionQuality,
           });
 
           setTimeout(() => {
@@ -211,6 +212,7 @@ export class VideoExporter {
           outro,
           aspectRatio,
           captionStyle,
+          resolutionQuality,
         });
 
         const progressVal = Math.min(0.98, currentTime / totalDuration);

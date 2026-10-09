@@ -16,6 +16,7 @@ export interface RenderContext {
   outro: OutroConfig;
   aspectRatio: AspectRatioType;
   captionStyle: CaptionStyle;
+  resolutionQuality: VideoResolutionQuality;
 }
 
 export interface SegmentInfo {
@@ -179,13 +180,13 @@ export class VideoRenderer {
   }
 
   public renderFrame(ctxProps: RenderContext) {
-    const { canvas, time, intro, slides, outro, aspectRatio, captionStyle } = ctxProps;
+    const { canvas, time, intro, slides, outro, aspectRatio, captionStyle, resolutionQuality } = ctxProps;
     this.currentIntroConfig = intro;
     this.currentOutroConfig = outro;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const { width, height } = this.getResolution(aspectRatio);
+    const { width, height } = this.getResolution(aspectRatio, resolutionQuality);
     if (canvas.width !== width || canvas.height !== height) {
       canvas.width = width;
       canvas.height = height;

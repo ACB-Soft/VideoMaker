@@ -180,6 +180,7 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
       outro,
       aspectRatio,
       captionStyle,
+      resolutionQuality: '1080p',
     });
   }, [currentTime, intro, slides, outro, aspectRatio, captionStyle]);
 
