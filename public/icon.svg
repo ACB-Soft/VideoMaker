@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <linearGradient id="ig-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f09433"/>
+      <stop offset="25%" stop-color="#e6683c"/>
+      <stop offset="50%" stop-color="#dc2743"/>
+      <stop offset="75%" stop-color="#cc2366"/>
+      <stop offset="100%" stop-color="#bc1888"/>
+    </linearGradient>
+    <linearGradient id="neon-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <!-- Background Rounded Squircle -->
+  <rect width="512" height="512" rx="120" fill="#0f172a"/>
+  <!-- Glowing Border -->
+  <rect x="16" y="16" width="480" height="480" rx="104" stroke="url(#ig-grad)" stroke-width="12" fill="none" opacity="0.8"/>
+  
+  <!-- Outer Camera / Reel Frame -->
+  <rect x="96" y="96" width="320" height="320" rx="72" stroke="url(#ig-grad)" stroke-width="28" fill="none"/>
+  
+  <!-- Center Play / Lens -->
+  <circle cx="256" cy="256" r="80" stroke="url(#ig-grad)" stroke-width="24" fill="#1e293b"/>
+  
+  <!-- Play Triangle inside lens -->
+  <polygon points="244,226 284,256 244,286" fill="url(#ig-grad)"/>
+
+  <!-- Flash / Sparkle -->
+  <circle cx="340" cy="172" r="22" fill="url(#neon-glow)"/>
+</svg>

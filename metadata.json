@@ -1,0 +1,8 @@
+{
+  "name": "Video Maker",
+  "description": "Instagram gönderilerini otomatik içe aktarıp logo, geçiş efektleri ve müzikle profesyonel MP4 tanıtım videoları oluşturan PWA uygulaması.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
