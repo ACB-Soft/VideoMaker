@@ -33,7 +33,7 @@ export default function App() {
   // Intro Config
   const [intro, setIntro] = useState<IntroConfig>({
     enabled: true,
-    logoUrl: 'LOGO.png',
+    logoUrl: '/LOGO.png',
     logoScale: 3.2,
     logoCropPercent: 0,
     logoBgColor: 'transparent',
@@ -51,7 +51,7 @@ export default function App() {
   // Outro Config
   const [outro, setOutro] = useState<OutroConfig>({
     enabled: true,
-    logoUrl: 'LOGO.png',
+    logoUrl: '/LOGO.png',
     logoScale: 3.2,
     logoCropPercent: 0,
     logoBgColor: 'transparent',
@@ -77,14 +77,24 @@ export default function App() {
   // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
-  // Helper to build grouped slides (multi-image in same group shown simultaneously)
+  // Helper to build grouped slides while preserving user custom edits (titles, captions, durations)
   const buildGroupedSlides = (
     allPosts: InstagramPost[],
     selectedIds: string[],
-    slideDuration: number
+    slideDuration: number,
+    existingSlides: VideoSlide[] = []
   ): VideoSlide[] => {
     const selected = allPosts.filter((p) => selectedIds.includes(p.id));
     if (selected.length === 0) return [];
+
+    const existingMap = new Map<string, VideoSlide>();
+    existingSlides.forEach((s) => {
+      if (s.groupId) existingMap.set(s.groupId, s);
+      if (s.post?.id) existingMap.set(s.post.id, s);
+      if (s.posts) {
+        s.posts.forEach((p) => existingMap.set(p.id, s));
+      }
+    });
 
     // Group selected posts by groupId
     const groupsMap = new Map<string, InstagramPost[]>();
@@ -104,43 +114,52 @@ export default function App() {
       for (let c = 0; c < groupPosts.length; c += maxPerGroup) {
         const chunk = groupPosts.slice(c, c + maxPerGroup);
         const primary = chunk[0];
-        const sharedTitle = primary.groupTitle || primary.groupName || primary.title || 'Faaliyet Tanıtımı';
-        const sharedCaption = primary.caption || '';
+        
+        // Find existing slide if customized by user
+        const existing = existingMap.get(gKey) || existingMap.get(primary.id);
+
+        const sharedTitle = existing?.groupTitle || primary.groupTitle || primary.groupName || 'Faaliyet Tanıtımı';
+        const sharedCaption = existing?.captionText || primary.caption || '';
+        const dur = existing?.duration || primary.duration || slideDuration;
+        const trans = existing?.transition || 'fade';
+        const transDur = existing?.transitionDuration || 0.6;
+        const zoom = existing?.zoomEffect || 'static';
+        const showCap = existing?.showCaption !== undefined ? existing.showCaption : true;
 
         if (chunk.length === 1) {
           // Tek görsel
           resultSlides.push({
-            id: `slide-${primary.id}-${c}`,
+            id: existing?.id || `slide-${primary.id}-${c}`,
             type: 'image',
             post: primary,
             posts: [primary],
-            duration: primary.duration || slideDuration,
-            transition: 'fade', // Silinerek geçiş (Fade / Cross-dissolve)
-            transitionDuration: 0.6,
+            duration: dur,
+            transition: trans,
+            transitionDuration: transDur,
             groupTitle: sharedTitle,
             groupName: sharedTitle,
             captionText: primary.caption || sharedCaption,
-            showCaption: true,
+            showCaption: showCap,
             showAuthorBadge: false,
-            zoomEffect: 'static',
+            zoomEffect: zoom,
             groupId: primary.groupId,
           });
         } else {
           // Çoklu görsel (Eski 3'lü yapı: en çok 3 görsel)
           resultSlides.push({
-            id: `slide-group-${gKey}-${c}`,
+            id: existing?.id || `slide-group-${gKey}-${c}`,
             type: 'group-collage',
             post: primary,
-            posts: chunk, // Sayfada 3 fotoğrafa kadar
-            duration: Math.max(slideDuration, (primary.duration || slideDuration) + 0.5),
-            transition: 'fade', // Silinerek geçiş (Fade / Cross-dissolve)
-            transitionDuration: 0.6,
-            groupTitle: sharedTitle, // Üstte logo sağında fotoğraflarla ortalı grup başlığı
+            posts: chunk,
+            duration: Math.max(dur, slideDuration),
+            transition: trans,
+            transitionDuration: transDur,
+            groupTitle: sharedTitle,
             groupName: sharedTitle,
-            captionText: sharedCaption, // Altta fotoğrafların altında açıklama yazısı
-            showCaption: true,
+            captionText: sharedCaption,
+            showCaption: showCap,
             showAuthorBadge: false,
-            zoomEffect: 'static',
+            zoomEffect: zoom,
             groupId: gKey,
           });
         }
@@ -151,10 +170,157 @@ export default function App() {
     return resultSlides;
   };
 
-  // Synchronize slides automatically whenever posts, selectedPostIds, or defaultSlideDuration changes
-  useEffect(() => {
-    setSlides(buildGroupedSlides(posts, selectedPostIds, defaultSlideDuration));
-  }, [posts, selectedPostIds, defaultSlideDuration]);
+  // Handler when new posts are imported or uploaded
+  const handleBatchImport = (newItems: InstagramPost[]) => {
+    setPosts((prev) => {
+      const existingIds = new Set(prev.map((p) => p.id));
+      const filtered = newItems.filter((p) => !existingIds.has(p.id));
+      const combined = [...filtered, ...prev];
+      return combined;
+    });
+
+    const newIds = newItems.map((p) => p.id);
+    setSelectedPostIds((prev) => {
+      const merged = Array.from(new Set([...prev, ...newIds]));
+      setSlides((prevSlides) => {
+        const allPostsCombined = [...newItems, ...posts];
+        return buildGroupedSlides(allPostsCombined, merged, defaultSlideDuration, prevSlides);
+      });
+      return merged;
+    });
+  };
+
+  // Handler when a single photo is deleted (from MediaImporter)
+  const handleDeletePost = (postId: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+    setSelectedPostIds((prev) => prev.filter((id) => id !== postId));
+    setSlides((prevSlides) => {
+      const updated: VideoSlide[] = [];
+      for (const s of prevSlides) {
+        if (s.posts && s.posts.length > 0) {
+          const remaining = s.posts.filter((p) => p.id !== postId);
+          if (remaining.length > 0) {
+            updated.push({
+              ...s,
+              post: remaining[0],
+              posts: remaining,
+            });
+          }
+        } else if (s.post && s.post.id !== postId) {
+          updated.push(s);
+        }
+      }
+      return updated;
+    });
+  };
+
+  // Handler when post is edited in MediaImporter
+  const handleSavePostEdit = (updatedPost: InstagramPost, updateWholeGroup: boolean) => {
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (p.id === updatedPost.id || (updateWholeGroup && updatedPost.groupId && p.groupId === updatedPost.groupId)) {
+          return {
+            ...p,
+            groupTitle: updatedPost.groupTitle,
+            groupName: updatedPost.groupTitle,
+            caption: updatedPost.caption,
+            groupId: updatedPost.groupId,
+            duration: updatedPost.duration,
+          };
+        }
+        return p;
+      })
+    );
+
+    // Update slides directly so changes are instantly reflected in preview and video export
+    setSlides((prevSlides) =>
+      prevSlides.map((s) => {
+        const matchesGroup = updatedPost.groupId && s.groupId === updatedPost.groupId;
+        const matchesPost = s.post?.id === updatedPost.id || s.posts?.some((p) => p.id === updatedPost.id);
+        if (matchesGroup || matchesPost) {
+          return {
+            ...s,
+            groupTitle: updatedPost.groupTitle,
+            groupName: updatedPost.groupTitle,
+            captionText: updatedPost.caption,
+            duration: updatedPost.duration || s.duration,
+            post: s.post?.id === updatedPost.id ? updatedPost : s.post,
+            posts: s.posts?.map((p) => (p.id === updatedPost.id ? updatedPost : p)) || [updatedPost],
+          };
+        }
+        return s;
+      })
+    );
+  };
+
+  // Handler when user groups selected photos
+  const handleGroupSelectedPosts = (
+    newGroupId: string,
+    groupTitle: string,
+    caption: string,
+    duration: number
+  ) => {
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (selectedPostIds.includes(p.id)) {
+          return {
+            ...p,
+            groupId: newGroupId,
+            groupTitle: groupTitle,
+            groupName: groupTitle,
+            caption: caption,
+            duration: duration,
+          };
+        }
+        return p;
+      })
+    );
+
+    setSlides((prevSlides) => {
+      const updatedPosts = posts.map((p) => {
+        if (selectedPostIds.includes(p.id)) {
+          return {
+            ...p,
+            groupId: newGroupId,
+            groupTitle: groupTitle,
+            groupName: groupTitle,
+            caption: caption,
+            duration: duration,
+          };
+        }
+        return p;
+      });
+      return buildGroupedSlides(updatedPosts, selectedPostIds, defaultSlideDuration, prevSlides);
+    });
+  };
+
+  // Handler when user deletes a slide in VideoTimelineEditor
+  const handleDeleteSlide = (slideId: string, postIdsToRemove: string[]) => {
+    setSlides((prev) => prev.filter((s) => s.id !== slideId));
+    setSelectedPostIds((prev) => prev.filter((id) => !postIdsToRemove.includes(id)));
+  };
+
+  // Handler when user edits a slide in VideoTimelineEditor
+  const handleUpdateSlide = (updatedSlide: VideoSlide) => {
+    setSlides((prev) => prev.map((s) => (s.id === updatedSlide.id ? updatedSlide : s)));
+
+    // Synchronize corresponding posts
+    const targetIds = updatedSlide.posts ? updatedSlide.posts.map((p) => p.id) : [updatedSlide.post.id];
+    setPosts((prev) =>
+      prev.map((p) => {
+        if (targetIds.includes(p.id)) {
+          return {
+            ...p,
+            caption: updatedSlide.captionText,
+            groupTitle: updatedSlide.groupTitle,
+            groupName: updatedSlide.groupTitle,
+            duration: updatedSlide.duration,
+          };
+        }
+        return p;
+      })
+    );
+  };
 
   // Sync logo and background theme across intro, outro, and all slides
   const handleUpdateSharedBranding = (updates: Partial<IntroConfig>) => {
@@ -164,21 +330,45 @@ export default function App() {
 
   // Toggle single post selection
   const togglePostSelection = (post: InstagramPost) => {
-    setSelectedPostIds((prev) =>
-      prev.includes(post.id) ? prev.filter((id) => id !== post.id) : [...prev, post.id]
-    );
+    const isCurrentlySelected = selectedPostIds.includes(post.id);
+    const nextSelected = isCurrentlySelected
+      ? selectedPostIds.filter((id) => id !== post.id)
+      : [...selectedPostIds, post.id];
+
+    setSelectedPostIds(nextSelected);
+
+    if (isCurrentlySelected) {
+      setSlides((prevSlides) => {
+        const updated: VideoSlide[] = [];
+        for (const s of prevSlides) {
+          if (s.posts && s.posts.length > 0) {
+            const rem = s.posts.filter((p) => p.id !== post.id);
+            if (rem.length > 0) {
+              updated.push({ ...s, post: rem[0], posts: rem });
+            }
+          } else if (s.post?.id !== post.id) {
+            updated.push(s);
+          }
+        }
+        return updated;
+      });
+    } else {
+      setSlides((prevSlides) => buildGroupedSlides(posts, nextSelected, defaultSlideDuration, prevSlides));
+    }
   };
 
   // Select all posts
   const selectAllPosts = (postList: InstagramPost[]) => {
-    const ids = postList.map((p) => p.id);
+    const ids = Array.from(new Set([...selectedPostIds, ...postList.map((p) => p.id)]));
     setSelectedPostIds(ids);
+    setSlides((prevSlides) => buildGroupedSlides(posts, ids, defaultSlideDuration, prevSlides));
   };
 
   // Reverse posts and selections order
   const handleReversePostsOrder = () => {
     setPosts((prev) => [...prev].reverse());
     setSelectedPostIds((prev) => [...prev].reverse());
+    setSlides((prev) => [...prev].reverse());
   };
 
   // Update duration for all photos
@@ -200,11 +390,8 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
       {/* Header Bar */}
       <Header
-        aspectRatio={aspectRatio}
-        setAspectRatio={setAspectRatio}
         selectedCount={selectedPostIds.length}
         totalDuration={totalDuration}
-        onOpenExport={() => setIsExportModalOpen(true)}
       />
 
       {/* Step Navigation Bar (Başlığın dışında, içerik geçiş adımları) */}
@@ -274,6 +461,10 @@ export default function App() {
             onContinue={() => setActiveTab('intro-outro')}
             defaultDuration={defaultSlideDuration}
             onUpdateDefaultDuration={handleUpdateAllSlideDurations}
+            onDeletePost={handleDeletePost}
+            onSavePostEdit={handleSavePostEdit}
+            onGroupSelectedPosts={handleGroupSelectedPosts}
+            onBatchImport={handleBatchImport}
           />
         )}
 
@@ -307,6 +498,8 @@ export default function App() {
             isMuted={isMuted}
             setIsMuted={setIsMuted}
             onOpenExport={() => setIsExportModalOpen(true)}
+            onDeleteSlide={handleDeleteSlide}
+            onUpdateSlide={handleUpdateSlide}
           />
         )}
       </main>

@@ -42,6 +42,10 @@ interface MediaImporterProps {
   onContinue: () => void;
   defaultDuration: number;
   onUpdateDefaultDuration: (dur: number) => void;
+  onDeletePost?: (postId: string) => void;
+  onSavePostEdit?: (updatedPost: InstagramPost, updateWholeGroup: boolean) => void;
+  onGroupSelectedPosts?: (newGroupId: string, groupTitle: string, caption: string, duration: number) => void;
+  onBatchImport?: (newPosts: InstagramPost[]) => void;
 }
 
 export const MediaImporter: React.FC<MediaImporterProps> = ({
@@ -55,6 +59,10 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
   onContinue,
   defaultDuration,
   onUpdateDefaultDuration,
+  onDeletePost,
+  onSavePostEdit,
+  onGroupSelectedPosts,
+  onBatchImport,
 }) => {
   // Default Groups
   const [groups, setGroups] = useState<MediaGroup[]>([
@@ -130,8 +138,13 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
 
         loadedCount++;
         if (loadedCount === fileList.length) {
-          setPosts((prev) => [...newItems, ...prev]);
-          selectAllPosts(newItems);
+          registerPostGroups(newItems);
+          if (onBatchImport) {
+            onBatchImport(newItems);
+          } else {
+            setPosts((prev) => [...newItems, ...prev]);
+            selectAllPosts(newItems);
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -198,20 +211,33 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
     const targetGroup = groups.find((g) => g.id === editPostGroup);
     const resolvedGroupTitle = editGroupTitle.trim() || targetGroup?.name || editingPost.groupName || 'Tanıtım';
 
-    setPosts((prev) =>
-      prev.map((p) =>
-        p.id === editingPost.id
-          ? {
-              ...p,
-              groupTitle: resolvedGroupTitle,
-              caption: editCaptionText,
-              groupId: editPostGroup,
-              groupName: targetGroup?.name || resolvedGroupTitle,
-              duration: editPostDuration,
-            }
-          : p
-      )
-    );
+    const updatedPost: InstagramPost = {
+      ...editingPost,
+      groupTitle: resolvedGroupTitle,
+      caption: editCaptionText,
+      groupId: editPostGroup,
+      groupName: targetGroup?.name || resolvedGroupTitle,
+      duration: editPostDuration,
+    };
+
+    if (onSavePostEdit) {
+      onSavePostEdit(updatedPost, true);
+    } else {
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === editingPost.id || (editingPost.groupId && p.groupId === editingPost.groupId)
+            ? {
+                ...p,
+                groupTitle: resolvedGroupTitle,
+                caption: editCaptionText,
+                groupId: editPostGroup,
+                groupName: targetGroup?.name || resolvedGroupTitle,
+                duration: editPostDuration,
+              }
+            : p
+        )
+      );
+    }
 
     setEditingPost(null);
   };
@@ -245,22 +271,26 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
       ]);
     }
 
-    // Update all selected posts with shared groupId, groupTitle, groupName, caption, and duration
-    setPosts((prev) =>
-      prev.map((p) => {
-        if (selectedPostIds.includes(p.id)) {
-          return {
-            ...p,
-            groupId: newGroupId,
-            groupTitle: newTitle,
-            groupName: newTitle,
-            caption: groupCaptionText,
-            duration: groupSlideDuration,
-          };
-        }
-        return p;
-      })
-    );
+    if (onGroupSelectedPosts) {
+      onGroupSelectedPosts(newGroupId, newTitle, groupCaptionText, groupSlideDuration);
+    } else {
+      // Update all selected posts with shared groupId, groupTitle, groupName, caption, and duration
+      setPosts((prev) =>
+        prev.map((p) => {
+          if (selectedPostIds.includes(p.id)) {
+            return {
+              ...p,
+              groupId: newGroupId,
+              groupTitle: newTitle,
+              groupName: newTitle,
+              caption: groupCaptionText,
+              duration: groupSlideDuration,
+            };
+          }
+          return p;
+        })
+      );
+    }
 
     setIsGroupModalOpen(false);
   };
@@ -296,8 +326,12 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
         if (postsWithMedia.length > 0) {
           registerPostGroups(postsWithMedia);
           setMatchedPostsPreview(postsWithMedia);
-          setPosts((prev) => [...postsWithMedia, ...prev]);
-          postsWithMedia.forEach((p) => togglePostSelection(p));
+          if (onBatchImport) {
+            onBatchImport(postsWithMedia);
+          } else {
+            setPosts((prev) => [...postsWithMedia, ...prev]);
+            selectAllPosts(postsWithMedia);
+          }
           msg += ` ve ${matchedCount} görsel otomatik eşleştirilip videoya eklendi!`;
         }
       } else {
@@ -333,12 +367,16 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
       } else {
         registerPostGroups(postsWithMedia);
         setMatchedPostsPreview(postsWithMedia);
-        setPosts((prev) => {
-          const existingIds = new Set(prev.map((p) => p.id));
-          const newOnes = postsWithMedia.filter((p) => !existingIds.has(p.id));
-          return [...newOnes, ...prev];
-        });
-        postsWithMedia.forEach((p) => togglePostSelection(p));
+        if (onBatchImport) {
+          onBatchImport(postsWithMedia);
+        } else {
+          setPosts((prev) => {
+            const existingIds = new Set(prev.map((p) => p.id));
+            const newOnes = postsWithMedia.filter((p) => !existingIds.has(p.id));
+            return [...newOnes, ...prev];
+          });
+          selectAllPosts(postsWithMedia);
+        }
         setJsonStatusMessage(`✓ Harika! ${matchedCount} adet fotoğraf ve Instagram açıklaması başarıyla eşleştirildi ve videoya eklendi!`);
       }
     } catch (err: any) {
@@ -394,7 +432,11 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
 
   // Delete Single Post
   const handleDeletePost = (postId: string) => {
-    setPosts((prev) => prev.filter((p) => p.id !== postId));
+    if (onDeletePost) {
+      onDeletePost(postId);
+    } else {
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+    }
   };
 
   // Filtered Posts

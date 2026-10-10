@@ -32,7 +32,10 @@ import {
   Type,
   Eye,
   EyeOff,
-  MoveHorizontal,
+  Smartphone,
+  Square,
+  RectangleVertical,
+  Monitor,
   Upload,
   Tag,
 } from 'lucide-react';
@@ -55,6 +58,8 @@ interface VideoTimelineEditorProps {
   isMuted: boolean;
   setIsMuted: (m: boolean) => void;
   onOpenExport: () => void;
+  onDeleteSlide?: (slideId: string, postIds: string[]) => void;
+  onUpdateSlide?: (updated: VideoSlide) => void;
 }
 
 export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
@@ -75,6 +80,8 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
   isMuted,
   setIsMuted,
   onOpenExport,
+  onDeleteSlide,
+  onUpdateSlide,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -211,11 +218,21 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
   };
 
   const removeSlide = (id: string) => {
-    setSlides((prev) => prev.filter((s) => s.id !== id));
+    if (onDeleteSlide) {
+      const slideToRemove = slides.find((s) => s.id === id);
+      const ids = slideToRemove?.posts?.map((p) => p.id) || (slideToRemove?.post ? [slideToRemove.post.id] : []);
+      onDeleteSlide(id, ids);
+    } else {
+      setSlides((prev) => prev.filter((s) => s.id !== id));
+    }
   };
 
   const updateSlideConfig = (updated: VideoSlide) => {
-    setSlides((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    if (onUpdateSlide) {
+      onUpdateSlide(updated);
+    } else {
+      setSlides((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+    }
     setEditingSlide(null);
   };
 
@@ -245,6 +262,65 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
     <div className="space-y-6">
       {/* Top Controls Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/80 p-4">
+        {/* Aspect Ratio Selector (Önizleme ekranına kaydırıldı) */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-semibold text-slate-400">Format:</span>
+          <div className="flex items-center gap-1 rounded-xl bg-slate-950 border border-slate-800 p-1">
+            <button
+              type="button"
+              onClick={() => setAspectRatio('9:16')}
+              title="Dikey Video (9:16 - Reels / Shorts / Hikaye)"
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                aspectRatio === '9:16'
+                  ? 'bg-rose-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Smartphone className="h-3.5 w-3.5" />
+              <span>9:16</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAspectRatio('1:1')}
+              title="Kare Video (1:1 - Akış Gönderisi)"
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                aspectRatio === '1:1'
+                  ? 'bg-rose-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Square className="h-3.5 w-3.5" />
+              <span>1:1</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAspectRatio('4:5')}
+              title="Portre Video (4:5 - Dikey Gönderi)"
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                aspectRatio === '4:5'
+                  ? 'bg-rose-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <RectangleVertical className="h-3.5 w-3.5" />
+              <span>4:5</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAspectRatio('16:9')}
+              title="Yatay Video (16:9 - YouTube / Sunum)"
+              className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                aspectRatio === '16:9'
+                  ? 'bg-rose-500 text-white shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              <Monitor className="h-3.5 w-3.5" />
+              <span>16:9</span>
+            </button>
+          </div>
+        </div>
+
         {/* Caption Style Picker */}
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold text-slate-400 flex items-center gap-1">

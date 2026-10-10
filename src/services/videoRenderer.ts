@@ -91,15 +91,24 @@ export class VideoRenderer {
       .map(url => {
         return new Promise<void>((resolve) => {
           const img = new Image();
-          img.crossOrigin = 'anonymous';
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            img.crossOrigin = 'anonymous';
+          }
           img.onload = () => {
             this.imageCache.set(url, img);
             resolve();
           };
           img.onerror = () => {
-            // Provide a graceful fallback
-            this.imageCache.set(url, img);
-            resolve();
+            // Fallback: try loading without crossOrigin
+            const fallback = new Image();
+            fallback.onload = () => {
+              this.imageCache.set(url, fallback);
+              resolve();
+            };
+            fallback.onerror = () => {
+              resolve();
+            };
+            fallback.src = url;
           };
           img.src = url;
         });
@@ -113,13 +122,23 @@ export class VideoRenderer {
     if (!img && !this.pendingLoads.has(url)) {
       this.pendingLoads.add(url);
       const newImg = new Image();
-      newImg.crossOrigin = 'anonymous';
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        newImg.crossOrigin = 'anonymous';
+      }
       newImg.onload = () => {
         this.imageCache.set(url, newImg);
         this.pendingLoads.delete(url);
       };
       newImg.onerror = () => {
-        this.pendingLoads.delete(url);
+        const fallback = new Image();
+        fallback.onload = () => {
+          this.imageCache.set(url, fallback);
+          this.pendingLoads.delete(url);
+        };
+        fallback.onerror = () => {
+          this.pendingLoads.delete(url);
+        };
+        fallback.src = url;
       };
       newImg.src = url;
     }
@@ -473,7 +492,8 @@ export class VideoRenderer {
     // 2. Sol Üst Kurumsal Logo (Büyük, prestijli ve net köşe logosu)
     const intro = this.currentIntroConfig;
     const logoImg = intro?.logoUrl ? this.getImage(intro.logoUrl) : null;
-    const cornerLogoSize = Math.round(148 * scale);
+    const cornerLogoMultiplier = Math.min(1.5, Math.max(0.7, (intro?.logoScale || 3.2) / 2.5));
+    const cornerLogoSize = Math.round(148 * scale * cornerLogoMultiplier);
     const cornerX = Math.round(width * 0.05 + cornerLogoSize / 2);
     const cornerY = Math.round(height * 0.035 + cornerLogoSize / 2);
 
@@ -490,7 +510,7 @@ export class VideoRenderer {
     );
 
     // 2.5. Grup Başlığı: Sol üstteki logonun hemen sağında, büyük punto ile
-    const groupTitle = (slide.groupTitle || slide.groupName || slide.post.title || '').trim();
+    const groupTitle = (slide.groupTitle || slide.groupName || slide.post.groupTitle || slide.post.groupName || 'Faaliyet Tanıtımı').trim();
     if (groupTitle) {
       this.drawGroupTitle(ctx, width, height, groupTitle, cornerX, cornerLogoSize, cornerY, scale);
     }
@@ -813,10 +833,13 @@ export class VideoRenderer {
     ctx.translate(width / 2, height / 2);
     ctx.scale(animScale, animScale);
 
-    // Calculate logo size with smart scaling
+    const scale = width / 1080;
+
+    // Calculate logo size with smart scaling across all resolutions
     const rawScale = intro?.logoScale || 1.0;
-    const logoSize = Math.min(width * 0.68, Math.round(110 * rawScale));
-    const logoY = -logoSize / 2 - 35;
+    const baseLogoSize = Math.round(110 * rawScale * scale);
+    const logoSize = Math.min(width * 0.70, baseLogoSize);
+    const logoY = -logoSize / 2 - Math.round(35 * scale);
 
     const customLogoImg = intro?.logoUrl ? this.getImage(intro.logoUrl) : null;
 
@@ -833,9 +856,8 @@ export class VideoRenderer {
     );
 
     // Title (Giriş Ana Başlığı)
-    const scale = width / 1080;
-    const titleFontSize = Math.max(16, Math.round((intro?.titleFontSize || 56) * scale));
-    const subtitleFontSize = Math.max(12, Math.round((intro?.subtitleFontSize || 32) * scale));
+    const titleFontSize = Math.max(14, Math.round((intro?.titleFontSize || 56) * scale));
+    const subtitleFontSize = Math.max(11, Math.round((intro?.subtitleFontSize || 32) * scale));
 
     const titleY = logoY + logoSize / 2 + Math.round(55 * scale);
     ctx.fillStyle = isLight ? '#0f172a' : '#ffffff';
@@ -887,10 +909,13 @@ export class VideoRenderer {
     ctx.globalAlpha = animAlpha;
     ctx.translate(width / 2, height / 2);
 
+    const scale = width / 1080;
+
     // Calculate logo size with smart scaling (Giriş ile birebir aynı boyutta)
     const rawScale = outro?.logoScale || 1.0;
-    const logoSize = Math.min(width * 0.68, Math.round(110 * rawScale));
-    const logoY = -logoSize / 2 - 35;
+    const baseLogoSize = Math.round(110 * rawScale * scale);
+    const logoSize = Math.min(width * 0.70, baseLogoSize);
+    const logoY = -logoSize / 2 - Math.round(35 * scale);
 
     const customLogoImg = outro?.logoUrl ? this.getImage(outro.logoUrl) : null;
 
@@ -907,9 +932,8 @@ export class VideoRenderer {
     );
 
     // Title (Kapanış Ana Başlığı - Giriş ile birebir aynı seçenek yapısı)
-    const scale = width / 1080;
-    const titleFontSize = Math.max(16, Math.round((outro?.titleFontSize || 56) * scale));
-    const subtitleFontSize = Math.max(12, Math.round((outro?.subtitleFontSize || 32) * scale));
+    const titleFontSize = Math.max(14, Math.round((outro?.titleFontSize || 56) * scale));
+    const subtitleFontSize = Math.max(11, Math.round((outro?.subtitleFontSize || 32) * scale));
     const outroTitle = (outro?.title || outro?.headline || 'TEŞEKKÜRLER').trim();
     const outroSubtitle = (outro?.subtitle || outro?.callToAction || '').trim();
 
