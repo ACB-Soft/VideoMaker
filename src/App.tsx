@@ -14,6 +14,7 @@ import { MediaImporter } from './components/MediaImporter';
 import { IntroOutroEditor } from './components/IntroOutroEditor';
 import { VideoTimelineEditor } from './components/VideoTimelineEditor';
 import { ExportModal } from './components/ExportModal';
+import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { downloadProjectBackup, ProjectBackupPayload } from './services/projectBackup';
 import { Layers, Sparkles, SlidersHorizontal, CheckCircle2, AlertCircle, Info } from 'lucide-react';
@@ -34,9 +35,10 @@ export default function App() {
     { id: 'group-highlights', name: 'Öne Çıkanlar', color: 'amber' },
   ]);
 
-  // Project Backup Toast / Loading State
+  // Project Backup Toast / Loading / Restore Modal State
   const [isExportingBackup, setIsExportingBackup] = useState(false);
   const [backupToast, setBackupToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [activeRestoreBackup, setActiveRestoreBackup] = useState<ProjectBackupPayload | null>(null);
 
   // Audio State
   const [audioTrackId, setAudioTrackId] = useState<string>('track-corporate-innovation');
@@ -443,34 +445,7 @@ export default function App() {
 
   // Restore project from JSON backup
   const handleRestoreBackup = (backup: ProjectBackupPayload) => {
-    if (!backup.posts || backup.posts.length === 0) {
-      setBackupToast({
-        message: 'Yedek dosyasında fotoğraf verisi bulunamadı.',
-        type: 'error',
-      });
-      setTimeout(() => setBackupToast(null), 4000);
-      return;
-    }
-
-    setPosts(backup.posts);
-    const selIds =
-      backup.selectedPostIds && backup.selectedPostIds.length > 0
-        ? backup.selectedPostIds
-        : backup.posts.map((p) => p.id);
-    setSelectedPostIds(selIds);
-
-    if (backup.slides && backup.slides.length > 0) {
-      setSlides(backup.slides);
-    } else {
-      setSlides(
-        buildGroupedSlides(
-          backup.posts,
-          selIds,
-          backup.defaultSlideDuration || defaultSlideDuration
-        )
-      );
-    }
-
+    // 1. Immediately restore global project settings, themes and groups
     if (backup.groups && backup.groups.length > 0) {
       setGroups(backup.groups);
     }
@@ -483,8 +458,62 @@ export default function App() {
     if (backup.audioVolume !== undefined) setAudioVolume(backup.audioVolume);
     if (backup.isMuted !== undefined) setIsMuted(backup.isMuted);
 
+    // 2. Check if posts already have working image URLs (e.g. data URLs or remote)
+    const itemsWithImages = backup.items?.filter((it) => it.imageUrl && (it.imageUrl.startsWith('data:') || it.imageUrl.startsWith('http')));
+    const postsWithImages = backup.posts?.filter((p) => p.imageUrl && (p.imageUrl.startsWith('data:') || p.imageUrl.startsWith('http')));
+
+    if (postsWithImages && postsWithImages.length > 0) {
+      handleCompleteRestoreWithPosts(postsWithImages, backup);
+      return;
+    }
+
+    if (itemsWithImages && itemsWithImages.length === backup.items.length) {
+      const restoredPosts: InstagramPost[] = itemsWithImages.map((it, idx) => ({
+        id: `backup-post-${idx}-${Date.now()}`,
+        filename: it.filename,
+        imageUrl: it.imageUrl!,
+        caption: it.caption,
+        groupTitle: it.groupTitle,
+        groupName: it.groupName,
+        groupId: it.groupId,
+        duration: it.duration,
+        date: it.date,
+        tags: it.tags,
+      }));
+      handleCompleteRestoreWithPosts(restoredPosts, backup);
+      return;
+    }
+
+    // 3. Lightweight metadata backup: Open photo selection modal to link computer photos with backup filenames
+    setActiveRestoreBackup(backup);
+  };
+
+  const handleCompleteRestoreWithPosts = (
+    restoredPosts: InstagramPost[],
+    backup: ProjectBackupPayload,
+    ignoredCount?: number
+  ) => {
+    setPosts(restoredPosts);
+    const selIds =
+      backup.selectedPostIds && backup.selectedPostIds.length > 0
+        ? backup.selectedPostIds
+        : restoredPosts.map((p) => p.id);
+    setSelectedPostIds(selIds);
+
+    // Reconstruct slides using restored posts
+    setSlides(
+      buildGroupedSlides(
+        restoredPosts,
+        selIds,
+        backup.defaultSlideDuration || defaultSlideDuration
+      )
+    );
+
+    setActiveRestoreBackup(null);
+
+    const ignoredMsg = ignoredCount && ignoredCount > 0 ? ` (Yedekte ismi bulunmayan ${ignoredCount} fotoğraf elendi)` : '';
     setBackupToast({
-      message: `✓ Proje yedeği yüklendi! (${backup.posts.length} görsel, ${backup.slides?.length || 0} slayt ve tüm düzenlemeleriniz geri getirildi)`,
+      message: `✓ Harika! Yalnızca yedekteki ${restoredPosts.length} fotoğraf eşleştirilerek yüklendi!${ignoredMsg}`,
       type: 'success',
     });
     setTimeout(() => setBackupToast(null), 6000);
@@ -646,6 +675,16 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Project Backup Photo Match Modal */}
+      {activeRestoreBackup && (
+        <BackupRestoreModal
+          isOpen={true}
+          onClose={() => setActiveRestoreBackup(null)}
+          backup={activeRestoreBackup}
+          onCompleteRestore={handleCompleteRestoreWithPosts}
+        />
+      )}
 
       {/* MP4 Export Modal */}
       <ExportModal

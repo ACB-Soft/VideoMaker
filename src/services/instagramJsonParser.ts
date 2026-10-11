@@ -232,6 +232,7 @@ export function matchFilesWithInstagramPosts(
 
         postsWithMedia.push({
           id: `ig-media-${postIdx}-${mediaIdx}-${Date.now()}`,
+          filename: matchedFile.name || mediaItem.filename,
           imageUrl: objectUrl,
           caption: caption,
           title: post.title,

@@ -32,7 +32,7 @@ import {
   matchFilesWithInstagramPosts,
   ParsedInstagramPost,
 } from '../services/instagramJsonParser';
-import { parseProjectBackup, ProjectBackupPayload } from '../services/projectBackup';
+import { parseProjectBackup, ProjectBackupPayload, matchFilesWithBackup } from '../services/projectBackup';
 
 interface MediaImporterProps {
   posts: InstagramPost[];
@@ -141,6 +141,7 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
           const groupTitle = foundGroup?.name || 'Genel Tanıtım';
           const post: InstagramPost = {
             id: `media-${Date.now()}-${index}`,
+            filename: file.name,
             imageUrl: event.target.result,
             caption: cleanName.length > 2 ? cleanName : `Tanıtım Görseli #${index + 1}`,
             groupTitle: groupTitle,
@@ -325,7 +326,7 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
       if (onRestoreBackup) {
         onRestoreBackup(backup);
       }
-      setJsonStatusMessage(`✓ Harika! Proje yedeği ("${file.name}") başarıyla yüklendi! ${backup.posts.length} fotoğraf ve tüm düzenlemeleriniz geri getirildi.`);
+      setJsonStatusMessage(`✓ Harika! Proje yedeği ("${file.name}") okundu (${backup.items.length} fotoğraf).`);
     } catch (err: any) {
       console.error('Yedek yükleme hatası:', err);
       setJsonErrorMessage(err?.message || 'Proje yedeği dosyası yüklenemedi. Lütfen geçerli bir yedek .json dosyası seçin.');
@@ -359,10 +360,28 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
       // 1. Check if user selected our project backup JSON file
       try {
         const backup = parseProjectBackup(text);
+
+        // If user also selected images simultaneously, match them right away!
+        if (imageFiles.length > 0) {
+          const { posts: matchedPosts, matchedCount } = matchFilesWithBackup(backup, imageFiles);
+          if (matchedCount > 0 && onRestoreBackup) {
+            onRestoreBackup({
+              ...backup,
+              posts: matchedPosts,
+            });
+            setJsonStatusMessage(
+              `✓ Harika! Proje yedeği ve ${matchedCount} fotoğraf dosya adlarıyla otomatik eşleştirilip yüklendi!`
+            );
+            setIsProcessingJson(false);
+            if (e.target) e.target.value = '';
+            return;
+          }
+        }
+
         if (onRestoreBackup) {
           onRestoreBackup(backup);
           setJsonStatusMessage(
-            `✓ Harika! Proje yedeği ("${jsonFile.name}") algılandı ve yüklendi! ${backup.posts.length} fotoğraf ve tüm düzenlemeleriniz geri getirildi.`
+            `✓ Harika! Proje yedeği ("${jsonFile.name}") okundu (${backup.items.length} fotoğraf).`
           );
           setIsProcessingJson(false);
           if (e.target) e.target.value = '';

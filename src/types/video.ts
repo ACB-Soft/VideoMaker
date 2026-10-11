@@ -28,6 +28,7 @@ export interface MediaGroup {
 
 export interface InstagramPost {
   id: string;
+  filename?: string;
   imageUrl: string;
   caption: string;
   title?: string;
