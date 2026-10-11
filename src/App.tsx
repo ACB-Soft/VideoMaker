@@ -6,6 +6,7 @@ import {
   IntroConfig,
   OutroConfig,
   VideoSlide,
+  MediaGroup,
 } from './types/video';
 import { videoRenderer } from './services/videoRenderer';
 import { Header } from './components/Header';
@@ -14,7 +15,8 @@ import { IntroOutroEditor } from './components/IntroOutroEditor';
 import { VideoTimelineEditor } from './components/VideoTimelineEditor';
 import { ExportModal } from './components/ExportModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { Layers, Sparkles, SlidersHorizontal } from 'lucide-react';
+import { downloadProjectBackup, ProjectBackupPayload } from './services/projectBackup';
+import { Layers, Sparkles, SlidersHorizontal, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<'import' | 'intro-outro' | 'editor'>('import');
@@ -24,6 +26,17 @@ export default function App() {
   // Media Items State (Clean, user-added only)
   const [posts, setPosts] = useState<InstagramPost[]>([]);
   const [selectedPostIds, setSelectedPostIds] = useState<string[]>([]);
+
+  // User Groups State
+  const [groups, setGroups] = useState<MediaGroup[]>([
+    { id: 'group-default', name: 'Genel Tanıtım', color: 'rose' },
+    { id: 'group-activities', name: 'Faaliyetler & Projeler', color: 'sky' },
+    { id: 'group-highlights', name: 'Öne Çıkanlar', color: 'amber' },
+  ]);
+
+  // Project Backup Toast / Loading State
+  const [isExportingBackup, setIsExportingBackup] = useState(false);
+  const [backupToast, setBackupToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
 
   // Audio State
   const [audioTrackId, setAudioTrackId] = useState<string>('track-corporate-innovation');
@@ -384,6 +397,99 @@ export default function App() {
     setSlides([]);
   };
 
+  // Export all edits and data to persistent project JSON backup
+  const handleExportBackup = async () => {
+    if (posts.length === 0) {
+      setBackupToast({
+        message: 'Yedeklenecek fotoğraf veya içerik bulunmuyor. Önce görsel ekleyin.',
+        type: 'error',
+      });
+      setTimeout(() => setBackupToast(null), 4000);
+      return;
+    }
+
+    try {
+      setIsExportingBackup(true);
+      await downloadProjectBackup({
+        posts,
+        slides,
+        selectedPostIds,
+        groups,
+        intro,
+        outro,
+        aspectRatio,
+        captionStyle,
+        defaultSlideDuration,
+        audioTrackId,
+        audioVolume,
+        isMuted,
+      });
+
+      setBackupToast({
+        message: `✓ Proje yedeğiniz başarıyla .json olarak indirildi! (${posts.length} fotoğraf, tüm açıklamalar, başlıklar ve süreleriniz dahil)`,
+        type: 'success',
+      });
+    } catch (err: any) {
+      console.error('Yedek dışa aktarma hatası:', err);
+      setBackupToast({
+        message: 'Yedek oluşturulurken bir hata oluştu: ' + (err?.message || 'Bilinmeyen hata'),
+        type: 'error',
+      });
+    } finally {
+      setIsExportingBackup(false);
+      setTimeout(() => setBackupToast(null), 6000);
+    }
+  };
+
+  // Restore project from JSON backup
+  const handleRestoreBackup = (backup: ProjectBackupPayload) => {
+    if (!backup.posts || backup.posts.length === 0) {
+      setBackupToast({
+        message: 'Yedek dosyasında fotoğraf verisi bulunamadı.',
+        type: 'error',
+      });
+      setTimeout(() => setBackupToast(null), 4000);
+      return;
+    }
+
+    setPosts(backup.posts);
+    const selIds =
+      backup.selectedPostIds && backup.selectedPostIds.length > 0
+        ? backup.selectedPostIds
+        : backup.posts.map((p) => p.id);
+    setSelectedPostIds(selIds);
+
+    if (backup.slides && backup.slides.length > 0) {
+      setSlides(backup.slides);
+    } else {
+      setSlides(
+        buildGroupedSlides(
+          backup.posts,
+          selIds,
+          backup.defaultSlideDuration || defaultSlideDuration
+        )
+      );
+    }
+
+    if (backup.groups && backup.groups.length > 0) {
+      setGroups(backup.groups);
+    }
+    if (backup.intro) setIntro(backup.intro);
+    if (backup.outro) setOutro(backup.outro);
+    if (backup.aspectRatio) setAspectRatio(backup.aspectRatio);
+    if (backup.defaultSlideDuration) setDefaultSlideDuration(backup.defaultSlideDuration);
+    if (backup.captionStyle) setCaptionStyle(backup.captionStyle);
+    if (backup.audioTrackId) setAudioTrackId(backup.audioTrackId);
+    if (backup.audioVolume !== undefined) setAudioVolume(backup.audioVolume);
+    if (backup.isMuted !== undefined) setIsMuted(backup.isMuted);
+
+    setBackupToast({
+      message: `✓ Proje yedeği yüklendi! (${backup.posts.length} görsel, ${backup.slides?.length || 0} slayt ve tüm düzenlemeleriniz geri getirildi)`,
+      type: 'success',
+    });
+    setTimeout(() => setBackupToast(null), 6000);
+  };
+
   const { totalDuration } = videoRenderer.calculateSegments(intro, slides, outro);
 
   return (
@@ -392,7 +498,39 @@ export default function App() {
       <Header
         selectedCount={selectedPostIds.length}
         totalDuration={totalDuration}
+        hasContent={posts.length > 0}
+        isExportingBackup={isExportingBackup}
+        onExportBackup={handleExportBackup}
+        onRestoreBackup={handleRestoreBackup}
       />
+
+      {/* Backup Notification Toast */}
+      {backupToast && (
+        <div className="fixed top-16 right-4 sm:right-6 z-50 max-w-md">
+          <div
+            className={`flex items-start gap-3 rounded-2xl border p-4 shadow-2xl backdrop-blur-md ${
+              backupToast.type === 'success'
+                ? 'border-emerald-500/40 bg-emerald-950/95 text-emerald-200'
+                : backupToast.type === 'error'
+                ? 'border-rose-500/40 bg-rose-950/95 text-rose-200'
+                : 'border-sky-500/40 bg-slate-900/95 text-slate-200'
+            }`}
+          >
+            {backupToast.type === 'success' && <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />}
+            {backupToast.type === 'error' && <AlertCircle className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />}
+            {backupToast.type === 'info' && <Info className="h-5 w-5 text-sky-400 shrink-0 mt-0.5" />}
+            <div className="flex-1 text-xs leading-relaxed font-medium">
+              {backupToast.message}
+            </div>
+            <button
+              onClick={() => setBackupToast(null)}
+              className="text-slate-400 hover:text-white text-xs font-bold px-1"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Step Navigation Bar (Başlığın dışında, içerik geçiş adımları) */}
       <div className="w-full bg-slate-900/60 border-b border-slate-800/80 px-3 py-2 sm:px-6">
@@ -465,6 +603,11 @@ export default function App() {
             onSavePostEdit={handleSavePostEdit}
             onGroupSelectedPosts={handleGroupSelectedPosts}
             onBatchImport={handleBatchImport}
+            groups={groups}
+            setGroups={setGroups}
+            onExportBackup={handleExportBackup}
+            onRestoreBackup={handleRestoreBackup}
+            isExportingBackup={isExportingBackup}
           />
         )}
 

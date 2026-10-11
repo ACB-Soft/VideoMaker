@@ -24,12 +24,15 @@ import {
   Info,
   RefreshCw,
   Image as ImageIcon,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import {
   parseInstagramExportJson,
   matchFilesWithInstagramPosts,
   ParsedInstagramPost,
 } from '../services/instagramJsonParser';
+import { parseProjectBackup, ProjectBackupPayload } from '../services/projectBackup';
 
 interface MediaImporterProps {
   posts: InstagramPost[];
@@ -46,6 +49,11 @@ interface MediaImporterProps {
   onSavePostEdit?: (updatedPost: InstagramPost, updateWholeGroup: boolean) => void;
   onGroupSelectedPosts?: (newGroupId: string, groupTitle: string, caption: string, duration: number) => void;
   onBatchImport?: (newPosts: InstagramPost[]) => void;
+  groups?: MediaGroup[];
+  setGroups?: React.Dispatch<React.SetStateAction<MediaGroup[]>>;
+  onExportBackup?: () => void;
+  onRestoreBackup?: (backup: ProjectBackupPayload) => void;
+  isExportingBackup?: boolean;
 }
 
 export const MediaImporter: React.FC<MediaImporterProps> = ({
@@ -63,13 +71,21 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
   onSavePostEdit,
   onGroupSelectedPosts,
   onBatchImport,
+  groups: propGroups,
+  setGroups: propSetGroups,
+  onExportBackup,
+  onRestoreBackup,
+  isExportingBackup,
 }) => {
-  // Default Groups
-  const [groups, setGroups] = useState<MediaGroup[]>([
+  // Default Groups fallback
+  const [internalGroups, setInternalGroups] = useState<MediaGroup[]>([
     { id: 'group-default', name: 'Genel Tanıtım', color: 'rose' },
     { id: 'group-activities', name: 'Faaliyetler & Projeler', color: 'sky' },
     { id: 'group-highlights', name: 'Öne Çıkanlar', color: 'amber' },
   ]);
+
+  const groups = propGroups || internalGroups;
+  const setGroups = propSetGroups || setInternalGroups;
 
   const [activeGroupId, setActiveGroupId] = useState<string>('all');
   const [newGroupName, setNewGroupName] = useState('');
@@ -89,6 +105,7 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
   const jsonFileInputRef = useRef<HTMLInputElement>(null);
   const mediaFolderInputRef = useRef<HTMLInputElement>(null);
   const combinedJsonMediaInputRef = useRef<HTMLInputElement>(null);
+  const backupFileInputRef = useRef<HTMLInputElement>(null);
 
   // Edit Caption Modal State
   const [editingPost, setEditingPost] = useState<InstagramPost | null>(null);
@@ -295,6 +312,29 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
     setIsGroupModalOpen(false);
   };
 
+  // Handle Direct Backup File Selection (.json)
+  const handleBackupFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingJson(true);
+    setJsonErrorMessage(null);
+    try {
+      const text = await file.text();
+      const backup = parseProjectBackup(text);
+      if (onRestoreBackup) {
+        onRestoreBackup(backup);
+      }
+      setJsonStatusMessage(`✓ Harika! Proje yedeği ("${file.name}") başarıyla yüklendi! ${backup.posts.length} fotoğraf ve tüm düzenlemeleriniz geri getirildi.`);
+    } catch (err: any) {
+      console.error('Yedek yükleme hatası:', err);
+      setJsonErrorMessage(err?.message || 'Proje yedeği dosyası yüklenemedi. Lütfen geçerli bir yedek .json dosyası seçin.');
+    } finally {
+      setIsProcessingJson(false);
+      if (e.target) e.target.value = '';
+    }
+  };
+
   // Handle Instagram JSON file selection
   const handleJsonFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -315,6 +355,23 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
 
       setJsonFileName(jsonFile.name);
       const text = await jsonFile.text();
+
+      // 1. Check if user selected our project backup JSON file
+      try {
+        const backup = parseProjectBackup(text);
+        if (onRestoreBackup) {
+          onRestoreBackup(backup);
+          setJsonStatusMessage(
+            `✓ Harika! Proje yedeği ("${jsonFile.name}") algılandı ve yüklendi! ${backup.posts.length} fotoğraf ve tüm düzenlemeleriniz geri getirildi.`
+          );
+          setIsProcessingJson(false);
+          if (e.target) e.target.value = '';
+          return;
+        }
+      } catch {
+        // Not a project backup, continue with normal Instagram export parsing
+      }
+
       const parsed = parseInstagramExportJson(text);
       setParsedIgPosts(parsed);
 
@@ -462,30 +519,74 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
             </p>
           </div>
 
-          {/* Import Modes */}
-          <div className="flex items-center rounded-xl bg-slate-950 p-1 border border-slate-800">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Project Backup / Restore Controls */}
+            <input
+              type="file"
+              ref={backupFileInputRef}
+              accept=".json,application/json"
+              onChange={handleBackupFileSelect}
+              className="hidden"
+            />
             <button
-              onClick={() => setImportMode('upload')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                importMode === 'upload'
-                  ? 'bg-rose-500 text-white shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              type="button"
+              onClick={() => backupFileInputRef.current?.click()}
+              className="flex items-center gap-1.5 rounded-xl border border-slate-700 bg-slate-900/90 hover:bg-slate-800 hover:text-white px-3 py-1.5 text-xs font-semibold text-slate-300 transition shadow-sm"
+              title="Daha önce indirilen proje yedeğini (.json) yükle ve devam et"
             >
-              <FolderUp className="h-3.5 w-3.5" />
-              <span>Dosyadan Seç</span>
+              <Upload className="h-3.5 w-3.5 text-sky-400" />
+              <span>Yedek Proje Yükle (.json)</span>
             </button>
+
             <button
-              onClick={() => setImportMode('json')}
-              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
-                importMode === 'json'
-                  ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-sm'
-                  : 'text-sky-400 hover:text-white hover:bg-slate-900'
+              type="button"
+              onClick={onExportBackup}
+              disabled={isExportingBackup || posts.length === 0}
+              className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-xs font-bold transition shadow-sm ${
+                posts.length > 0
+                  ? 'border-emerald-500/50 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 hover:text-emerald-200'
+                  : 'border-slate-800 bg-slate-900/50 text-slate-600 cursor-not-allowed'
               }`}
+              title="Tüm düzenlemelerinizi (silinen fotoğraflar çıkarılmış, açıklamalar, başlıklar ve süreler kaydedilmiş) .json formatında indirin"
             >
-              <FileCode className="h-3.5 w-3.5" />
-              <span>Instagram .JSON İçe Aktar</span>
+              {isExportingBackup ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 text-emerald-400 animate-spin" />
+                  <span>Paketleniyor...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Düzenlemeleri Yedekle (.json)</span>
+                </>
+              )}
             </button>
+
+            {/* Import Modes */}
+            <div className="flex items-center rounded-xl bg-slate-950 p-1 border border-slate-800">
+              <button
+                onClick={() => setImportMode('upload')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  importMode === 'upload'
+                    ? 'bg-rose-500 text-white shadow-sm'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <FolderUp className="h-3.5 w-3.5" />
+                <span>Dosyadan Seç</span>
+              </button>
+              <button
+                onClick={() => setImportMode('json')}
+                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition ${
+                  importMode === 'json'
+                    ? 'bg-gradient-to-r from-sky-500 to-indigo-600 text-white shadow-sm'
+                    : 'text-sky-400 hover:text-white hover:bg-slate-900'
+                }`}
+              >
+                <FileCode className="h-3.5 w-3.5" />
+                <span>Instagram .JSON İçe Aktar</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -574,6 +675,17 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
                 >
                   <FolderArchive className="h-4 w-4 text-sky-400" />
                   <span>JSON + Fotoğrafları Birlikte Seç</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => backupFileInputRef.current?.click()}
+                  disabled={isProcessingJson}
+                  className="flex items-center gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 px-4 py-2.5 text-xs font-semibold text-emerald-300 transition"
+                  title="Daha önce indirilen proje yedeğini (.json) yükleyin"
+                >
+                  <Upload className="h-4 w-4 text-emerald-400" />
+                  <span>Yedek Proje (.json) Yükle</span>
                 </button>
 
                 <button
@@ -799,6 +911,25 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
               <span>Sıralamayı Tersine Döndür</span>
             </button>
             <button
+              type="button"
+              onClick={onExportBackup}
+              disabled={isExportingBackup || posts.length === 0}
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition shadow-sm"
+              title="Tüm düzenlemelerinizi .json olarak indirin ve yedekleyin"
+            >
+              {isExportingBackup ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 text-emerald-400 animate-spin" />
+                  <span>Paketleniyor...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-3.5 w-3.5 text-emerald-400" />
+                  <span>Yedekle (.json)</span>
+                </>
+              )}
+            </button>
+            <button
               onClick={() => selectAllPosts(filteredPosts)}
               className="rounded-xl border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium text-slate-200 hover:bg-slate-700 transition"
             >
@@ -984,6 +1115,28 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
             >
               <Layers className="h-4 w-4 text-sky-400" />
               <span>Seçilen {selectedPostIds.length} Fotoğrafı Grupla & Açıklama Yaz</span>
+            </button>
+          )}
+
+          {onExportBackup && posts.length > 0 && (
+            <button
+              type="button"
+              onClick={onExportBackup}
+              disabled={isExportingBackup}
+              className="flex items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 px-3.5 py-2.5 text-xs font-semibold text-emerald-300 transition shadow-sm"
+              title="Tüm düzenlemelerinizi .json olarak indirin ve yedekleyin"
+            >
+              {isExportingBackup ? (
+                <>
+                  <Loader2 className="h-4 w-4 text-emerald-400 animate-spin" />
+                  <span>Paketleniyor...</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-4 w-4 text-emerald-400" />
+                  <span>Düzenlemeleri Yedekle (.json)</span>
+                </>
+              )}
             </button>
           )}
 
