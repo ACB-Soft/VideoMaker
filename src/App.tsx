@@ -21,6 +21,7 @@ import {
   ProjectBackupPayload,
   createRestoredPostsFromBackup,
   reconstructSlidesFromBackup,
+  applySavedCropsToPosts,
 } from './services/projectBackup';
 import { Layers, Sparkles, SlidersHorizontal, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
@@ -239,7 +240,13 @@ export default function App() {
   const handleSavePostEdit = (updatedPost: InstagramPost, updateWholeGroup: boolean) => {
     setPosts((prev) =>
       prev.map((p) => {
-        if (p.id === updatedPost.id || (updateWholeGroup && updatedPost.groupId && p.groupId === updatedPost.groupId)) {
+        if (p.id === updatedPost.id) {
+          return {
+            ...p,
+            ...updatedPost,
+          };
+        }
+        if (updateWholeGroup && updatedPost.groupId && p.groupId === updatedPost.groupId) {
           return {
             ...p,
             groupTitle: updatedPost.groupTitle,
@@ -512,19 +519,22 @@ export default function App() {
     setTimeout(() => setBackupToast(null), 6000);
   };
 
-  const handleCompleteRestoreWithPosts = (
+  const handleCompleteRestoreWithPosts = async (
     restoredPosts: InstagramPost[],
     backup: ProjectBackupPayload,
     ignoredCount?: number
   ) => {
-    setPosts(restoredPosts);
-    const selIds = restoredPosts.map((p) => p.id);
+    // Automatically apply saved crops from backup JSON
+    const postsWithCrops = await applySavedCropsToPosts(restoredPosts);
+
+    setPosts(postsWithCrops);
+    const selIds = postsWithCrops.map((p) => p.id);
     setSelectedPostIds(selIds);
 
-    // Reconstruct slides preserving custom user edits, titles, captions and group collages
+    // Reconstruct slides preserving custom user edits, titles, captions, crops and group collages
     const reconstructed = reconstructSlidesFromBackup(
       backup,
-      restoredPosts,
+      postsWithCrops,
       backup.defaultSlideDuration || defaultSlideDuration
     );
     setSlides(reconstructed);
@@ -533,12 +543,13 @@ export default function App() {
     // Instantly take user to preview screen
     setActiveTab('editor');
 
+    const cropNotice = postsWithCrops.some((p) => p.crop) ? ' (kayıtlı kırpma oranları uygulandı)' : '';
     const ignoredMsg =
       ignoredCount && ignoredCount > 0
         ? ` (Yedekte ismi bulunmayan ${ignoredCount} fotoğraf koruma gereği elendi)`
         : '';
     setBackupToast({
-      message: `✓ Harika! Yalnızca yedekteki ${restoredPosts.length} fotoğraf başarıyla eşleştirildi ve önizleme ekranına aktarıldı!${ignoredMsg}`,
+      message: `✓ Harika! Yalnızca yedekteki ${postsWithCrops.length} fotoğraf başarıyla eşleştirildi${cropNotice} ve önizleme ekranına aktarıldı!${ignoredMsg}`,
       type: 'success',
     });
     setTimeout(() => setBackupToast(null), 6000);

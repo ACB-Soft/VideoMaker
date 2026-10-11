@@ -26,6 +26,7 @@ import {
   Image as ImageIcon,
   Download,
   Loader2,
+  Crop,
 } from 'lucide-react';
 import {
   parseInstagramExportJson,
@@ -33,6 +34,7 @@ import {
   ParsedInstagramPost,
 } from '../services/instagramJsonParser';
 import { parseProjectBackup, ProjectBackupPayload, matchFilesWithBackup } from '../services/projectBackup';
+import { ImageCropModal } from './ImageCropModal';
 
 interface MediaImporterProps {
   posts: InstagramPost[];
@@ -113,6 +115,7 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
   const [editCaptionText, setEditCaptionText] = useState('');
   const [editPostGroup, setEditPostGroup] = useState('');
   const [editPostDuration, setEditPostDuration] = useState<number>(3.0);
+  const [croppingPost, setCroppingPost] = useState<InstagramPost | null>(null);
 
   // Group Photos Modal State
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
@@ -258,6 +261,17 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
     }
 
     setEditingPost(null);
+  };
+
+  // Save Cropped Image & Update Posts and Slides
+  const handleSaveCrop = (updatedPost: InstagramPost) => {
+    setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
+    if (editingPost && editingPost.id === updatedPost.id) {
+      setEditingPost(updatedPost);
+    }
+    if (onSavePostEdit) {
+      onSavePostEdit(updatedPost, false);
+    }
   };
 
   // Open Group Modal for Selected Photos
@@ -1023,8 +1037,16 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
                   {/* Gradient shadow overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30" />
 
-                  {/* Top-Right Sequence Badge */}
-                  <div className="absolute top-2.5 right-2.5 z-10">
+                  {/* Top-Right Sequence Badge & Crop Indicator */}
+                  <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5">
+                    {post.crop && (
+                      <span
+                        className="rounded-lg bg-sky-500/90 text-white font-bold text-[9px] px-2 py-0.5 shadow-md border border-sky-300/40 backdrop-blur-sm"
+                        title={`Kırpıldı: ${post.crop.aspect}`}
+                      >
+                        ✂ {post.crop.aspect === 'free' ? 'Kırpıldı' : post.crop.aspect}
+                      </span>
+                    )}
                     {isSelected ? (
                       <div className="flex h-7 w-7 items-center justify-center rounded-full bg-rose-500 text-white shadow-md ring-2 ring-white/80 font-bold text-xs">
                         #{selectIndex + 1}
@@ -1038,6 +1060,16 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
 
                   {/* Top-Left Action Buttons */}
                   <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCroppingPost(post);
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-sky-400 hover:text-white hover:bg-sky-600 backdrop-blur-sm border border-white/10 transition shadow"
+                      title="Görseli Kırp & Oranla (4:3, 16:9, 1:1, 9:16 vb.)"
+                    >
+                      <Crop className="h-3.5 w-3.5" />
+                    </button>
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1180,12 +1212,20 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
             </h3>
 
             <form onSubmit={handleSaveEdit} className="mt-4 space-y-4">
-              <div className="relative h-36 w-full rounded-xl overflow-hidden border border-slate-700 bg-black">
+              <div className="relative h-40 w-full rounded-xl overflow-hidden border border-slate-700 bg-black group">
                 <img
                   src={editingPost.imageUrl}
                   alt="Önizleme"
-                  className="h-full w-full object-cover"
+                  className="h-full w-full object-contain"
                 />
+                <button
+                  type="button"
+                  onClick={() => setCroppingPost(editingPost)}
+                  className="absolute bottom-2.5 right-2.5 flex items-center gap-1.5 rounded-lg bg-sky-500/90 hover:bg-sky-500 px-3 py-1.5 text-xs font-bold text-white shadow-lg backdrop-blur-sm border border-sky-400/50 transition active:scale-95"
+                >
+                  <Crop className="h-3.5 w-3.5" />
+                  <span>Fotoğrafı Kırp {editingPost.crop ? `(${editingPost.crop.aspect})` : ''}</span>
+                </button>
               </div>
 
               {/* 1. Grup Başlığı (Fotoğrafların Üstünde - Logonun Sağında) */}
@@ -1397,6 +1437,16 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Photo Cropping & Aspect Ratio Modal */}
+      {croppingPost && (
+        <ImageCropModal
+          isOpen={true}
+          onClose={() => setCroppingPost(null)}
+          post={croppingPost}
+          onSaveCrop={handleSaveCrop}
+        />
       )}
     </div>
   );

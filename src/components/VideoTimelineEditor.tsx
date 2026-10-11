@@ -6,6 +6,7 @@ import {
   OutroConfig,
   TransitionType,
   VideoSlide,
+  InstagramPost,
 } from '../types/video';
 import { videoRenderer } from '../services/videoRenderer';
 import { audioEngine, AUDIO_TRACKS } from '../services/audioEngine';
@@ -38,7 +39,9 @@ import {
   Monitor,
   Upload,
   Tag,
+  Crop,
 } from 'lucide-react';
+import { ImageCropModal } from './ImageCropModal';
 
 interface VideoTimelineEditorProps {
   slides: VideoSlide[];
@@ -88,6 +91,36 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [selectedSlideId, setSelectedSlideId] = useState<string | null>(slides[0]?.id || null);
   const [editingSlide, setEditingSlide] = useState<VideoSlide | null>(null);
+  const [croppingSlidePost, setCroppingSlidePost] = useState<InstagramPost | null>(null);
+
+  const handleSaveCropFromTimeline = (updatedPost: InstagramPost) => {
+    setSlides((prev) =>
+      prev.map((s) => {
+        const matchesPost = s.post?.id === updatedPost.id || s.posts?.some((p) => p.id === updatedPost.id);
+        if (matchesPost) {
+          const updatedSlide: VideoSlide = {
+            ...s,
+            post: s.post?.id === updatedPost.id ? updatedPost : s.post,
+            posts: s.posts?.map((p) => (p.id === updatedPost.id ? updatedPost : p)) || [updatedPost],
+          };
+          if (onUpdateSlide) onUpdateSlide(updatedSlide);
+          return updatedSlide;
+        }
+        return s;
+      })
+    );
+    if (editingSlide) {
+      setEditingSlide((prev) =>
+        prev
+          ? {
+              ...prev,
+              post: prev.post?.id === updatedPost.id ? updatedPost : prev.post,
+              posts: prev.posts?.map((p) => (p.id === updatedPost.id ? updatedPost : p)) || [updatedPost],
+            }
+          : null
+      );
+    }
+  };
 
   const animationFrameRef = useRef<number | null>(null);
   const lastTimestampRef = useRef<number | null>(null);
@@ -594,6 +627,11 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
                     <div className="absolute top-1 left-1 rounded bg-black/70 px-1.5 py-0.5 text-[9px] font-bold text-white">
                       #{idx + 1}
                     </div>
+                    {slide.post.crop && (
+                      <div className="absolute top-1 left-7 rounded bg-sky-500/90 px-1 py-0.5 text-[8px] font-bold text-white shadow">
+                        ✂ {slide.post.crop.aspect}
+                      </div>
+                    )}
                     <div className="absolute top-1 right-1 rounded bg-rose-500/80 px-1.5 py-0.5 text-[9px] font-bold text-white">
                       {slide.duration.toFixed(1)}s
                     </div>
@@ -644,6 +682,16 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setCroppingSlidePost(slide.post);
+                          }}
+                          className="rounded p-1 text-slate-400 hover:text-sky-400"
+                          title="Fotoğrafı Kırp (4:3, 16:9, 1:1 vb.)"
+                        >
+                          <Crop className="h-3 w-3" />
+                        </button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -725,6 +773,33 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
             </div>
 
             <div className="mt-4 space-y-4">
+              {/* Photo preview & Crop trigger */}
+              <div className="flex items-center justify-between p-2.5 rounded-xl border border-slate-700 bg-slate-950/80">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <img
+                    src={editingSlide.post.imageUrl}
+                    alt=""
+                    className="h-11 w-11 object-cover rounded-lg border border-slate-700 shrink-0"
+                  />
+                  <div className="text-xs truncate">
+                    <span className="font-semibold text-white block truncate">
+                      {editingSlide.post.filename || 'Slayt Fotoğrafı'}
+                    </span>
+                    <span className="text-[10px] text-sky-400">
+                      {editingSlide.post.crop ? `Kırpıldı: ${editingSlide.post.crop.aspect}` : 'Orijinal Boyut'}
+                    </span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCroppingSlidePost(editingSlide.post)}
+                  className="flex items-center gap-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 px-3 py-1.5 text-xs font-bold text-white transition shadow shrink-0 active:scale-95"
+                >
+                  <Crop className="h-3.5 w-3.5" />
+                  <span>Kırp</span>
+                </button>
+              </div>
+
               {/* Duration */}
               <div>
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1">
@@ -911,6 +986,16 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Slide Image Cropping Modal */}
+      {croppingSlidePost && (
+        <ImageCropModal
+          isOpen={true}
+          onClose={() => setCroppingSlidePost(null)}
+          post={croppingSlidePost}
+          onSaveCrop={handleSaveCropFromTimeline}
+        />
       )}
     </div>
   );

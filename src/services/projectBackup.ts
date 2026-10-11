@@ -6,7 +6,9 @@ import {
   OutroConfig,
   AspectRatioType,
   CaptionStyle,
+  ImageCropData,
 } from '../types/video';
+import { cropImageCanvas } from './imageCropService';
 
 export interface BackupItemMetadata {
   filename: string;
@@ -19,6 +21,7 @@ export interface BackupItemMetadata {
   date?: string;
   tags?: string[];
   imageUrl?: string; // Optional (if present from data url or previous export)
+  crop?: ImageCropData; // Crop metadata (aspect ratio, coordinates)
 }
 
 export interface BackupSlideMetadata {
@@ -181,6 +184,7 @@ export function createLightweightBackupData(params: {
       order: idx + 1,
       date: post.date,
       tags: post.tags,
+      crop: post.crop,
     };
   });
 
@@ -289,7 +293,19 @@ export function parseProjectBackup(rawJson: string): ProjectBackupPayload {
       Array.isArray(parsed.posts))
   ) {
     const rawItems: BackupItemMetadata[] = Array.isArray(parsed.items)
-      ? parsed.items
+      ? parsed.items.map((it: any, idx: number) => ({
+          filename: it.filename || `foto_${idx + 1}.jpg`,
+          groupTitle: it.groupTitle || it.groupName || 'Tanıtım',
+          groupName: it.groupName || it.groupTitle || 'Tanıtım',
+          groupId: it.groupId,
+          caption: it.caption || '',
+          duration: it.duration || 3.0,
+          order: it.order || idx + 1,
+          date: it.date,
+          tags: it.tags,
+          imageUrl: it.imageUrl,
+          crop: it.crop,
+        }))
       : Array.isArray(parsed.posts)
       ? parsed.posts.map((p: any, idx: number) => ({
           filename: p.filename || extractPostFilename(p, idx),
@@ -302,6 +318,7 @@ export function parseProjectBackup(rawJson: string): ProjectBackupPayload {
           date: p.date,
           tags: p.tags,
           imageUrl: p.imageUrl,
+          crop: p.crop,
         }))
       : [];
 
@@ -361,6 +378,7 @@ export function createRestoredPostsFromBackup(backup: ProjectBackupPayload): Ins
       duration: item.duration || backup.defaultSlideDuration || 3.0,
       date: item.date || 'Yedek',
       tags: item.tags || ['tanitim'],
+      crop: item.crop,
     };
   });
 }
@@ -573,6 +591,8 @@ export function matchFilesWithBackup(
         id: `restored-post-${idx}`,
         filename: file.name,
         imageUrl: objectUrl,
+        originalImageUrl: objectUrl,
+        crop: item.crop,
         caption: item.caption || '',
         groupTitle: item.groupTitle || item.groupName || 'Faaliyet Tanıtımı',
         groupName: item.groupName || item.groupTitle || 'Faaliyet Tanıtımı',
@@ -586,6 +606,8 @@ export function matchFilesWithBackup(
         id: `restored-post-${idx}`,
         filename: item.filename,
         imageUrl: item.imageUrl,
+        originalImageUrl: item.imageUrl,
+        crop: item.crop,
         caption: item.caption || '',
         groupTitle: item.groupTitle || item.groupName || 'Faaliyet Tanıtımı',
         groupName: item.groupName || item.groupTitle || 'Faaliyet Tanıtımı',
@@ -601,6 +623,7 @@ export function matchFilesWithBackup(
         id: `restored-post-${idx}`,
         filename: item.filename,
         imageUrl: createPlaceholderImageSvg(item.filename, item.groupTitle),
+        crop: item.crop,
         caption: item.caption || '',
         groupTitle: item.groupTitle || item.groupName || 'Faaliyet Tanıtımı',
         groupName: item.groupName || item.groupTitle || 'Faaliyet Tanıtımı',
@@ -621,4 +644,28 @@ export function matchFilesWithBackup(
     ignoredCount,
     missingFilenames,
   };
+}
+
+/**
+ * Asynchronously applies saved crop rectangles to posts whose images are loaded.
+ */
+export async function applySavedCropsToPosts(posts: InstagramPost[]): Promise<InstagramPost[]> {
+  const updated: InstagramPost[] = [];
+  for (const p of posts) {
+    if (p.crop && p.imageUrl && !p.imageUrl.startsWith('data:image/svg+xml')) {
+      try {
+        const croppedUrl = await cropImageCanvas(p.originalImageUrl || p.imageUrl, p.crop);
+        updated.push({
+          ...p,
+          originalImageUrl: p.originalImageUrl || p.imageUrl,
+          imageUrl: croppedUrl,
+        });
+        continue;
+      } catch (err) {
+        console.warn('Failed to apply crop on post:', p.filename, err);
+      }
+    }
+    updated.push(p);
+  }
+  return updated;
 }

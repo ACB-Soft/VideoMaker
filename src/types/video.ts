@@ -19,6 +19,16 @@ export type CaptionStyle =
   | 'gradient-bold'
   | 'pill-badge';
 
+export interface ImageCropData {
+  x: number; // percentage (0 - 100)
+  y: number; // percentage (0 - 100)
+  width: number; // percentage (0 - 100)
+  height: number; // percentage (0 - 100)
+  aspect: string; // 'free' | '1:1' | '4:3' | '16:9' | '9:16' | '4:5' | '3:4'
+  rotation?: number; // 0, 90, 180, 270
+  zoom?: number; // 1.0 to 3.0
+}
+
 export interface MediaGroup {
   id: string;
   name: string;
@@ -30,6 +40,8 @@ export interface InstagramPost {
   id: string;
   filename?: string;
   imageUrl: string;
+  originalImageUrl?: string;
+  crop?: ImageCropData;
   caption: string;
   title?: string;
   groupTitle?: string;

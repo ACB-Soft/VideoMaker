@@ -122,6 +122,11 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
                     <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] text-slate-400 shrink-0">
                       {item.groupTitle || item.groupName}
                     </span>
+                    {item.crop && (
+                      <span className="rounded bg-sky-950/80 border border-sky-500/40 px-1.5 py-0.5 text-[9px] font-semibold text-sky-300 shrink-0">
+                        ✂ {item.crop.aspect}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0">
