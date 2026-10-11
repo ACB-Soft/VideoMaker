@@ -16,7 +16,12 @@ import { VideoTimelineEditor } from './components/VideoTimelineEditor';
 import { ExportModal } from './components/ExportModal';
 import { BackupRestoreModal } from './components/BackupRestoreModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
-import { downloadProjectBackup, ProjectBackupPayload } from './services/projectBackup';
+import {
+  downloadProjectBackup,
+  ProjectBackupPayload,
+  createRestoredPostsFromBackup,
+  reconstructSlidesFromBackup,
+} from './services/projectBackup';
 import { Layers, Sparkles, SlidersHorizontal, CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 export default function App() {
@@ -39,6 +44,7 @@ export default function App() {
   const [isExportingBackup, setIsExportingBackup] = useState(false);
   const [backupToast, setBackupToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [activeRestoreBackup, setActiveRestoreBackup] = useState<ProjectBackupPayload | null>(null);
+  const [lastRestoredBackup, setLastRestoredBackup] = useState<ProjectBackupPayload | null>(null);
 
   // Audio State
   const [audioTrackId, setAudioTrackId] = useState<string>('track-corporate-innovation');
@@ -445,6 +451,8 @@ export default function App() {
 
   // Restore project from JSON backup
   const handleRestoreBackup = (backup: ProjectBackupPayload) => {
+    setLastRestoredBackup(backup);
+
     // 1. Immediately restore global project settings, themes and groups
     if (backup.groups && backup.groups.length > 0) {
       setGroups(backup.groups);
@@ -458,34 +466,50 @@ export default function App() {
     if (backup.audioVolume !== undefined) setAudioVolume(backup.audioVolume);
     if (backup.isMuted !== undefined) setIsMuted(backup.isMuted);
 
-    // 2. Check if posts already have working image URLs (e.g. data URLs or remote)
-    const itemsWithImages = backup.items?.filter((it) => it.imageUrl && (it.imageUrl.startsWith('data:') || it.imageUrl.startsWith('http')));
-    const postsWithImages = backup.posts?.filter((p) => p.imageUrl && (p.imageUrl.startsWith('data:') || p.imageUrl.startsWith('http')));
-
-    if (postsWithImages && postsWithImages.length > 0) {
-      handleCompleteRestoreWithPosts(postsWithImages, backup);
+    // 2. Check if posts already have working image URLs from previous base64/remote
+    const legacyPosts = backup.posts?.filter(
+      (p) => p.imageUrl && (p.imageUrl.startsWith('data:') || p.imageUrl.startsWith('http'))
+    );
+    if (legacyPosts && legacyPosts.length > 0) {
+      handleCompleteRestoreWithPosts(legacyPosts, backup);
       return;
     }
 
-    if (itemsWithImages && itemsWithImages.length === backup.items.length) {
-      const restoredPosts: InstagramPost[] = itemsWithImages.map((it, idx) => ({
-        id: `backup-post-${idx}-${Date.now()}`,
-        filename: it.filename,
-        imageUrl: it.imageUrl!,
-        caption: it.caption,
-        groupTitle: it.groupTitle,
-        groupName: it.groupName,
-        groupId: it.groupId,
-        duration: it.duration,
-        date: it.date,
-        tags: it.tags,
-      }));
-      handleCompleteRestoreWithPosts(restoredPosts, backup);
+    // 3. IMMEDIATELY create restored posts and reconstruct slides so the preview screen is NEVER blank!
+    const restoredPosts = createRestoredPostsFromBackup(backup);
+    setPosts(restoredPosts);
+    const restoredIds = restoredPosts.map((p) => p.id);
+    setSelectedPostIds(restoredIds);
+
+    const initialSlides = reconstructSlidesFromBackup(
+      backup,
+      restoredPosts,
+      backup.defaultSlideDuration || defaultSlideDuration
+    );
+    setSlides(initialSlides);
+
+    // Check if any items need real image files from computer
+    const needsLocalImages = restoredPosts.some((p) => p.imageUrl.startsWith('data:image/svg+xml'));
+
+    if (!needsLocalImages) {
+      // All images are already present! Switch directly to preview
+      setActiveRestoreBackup(null);
+      setActiveTab('editor');
+      setBackupToast({
+        message: `✓ Proje yedeğiniz tüm fotoğraflarıyla (${restoredPosts.length} adet), açıklamalar ve başlıklarla eksiksiz önizleme ekranına yüklendi!`,
+        type: 'success',
+      });
+      setTimeout(() => setBackupToast(null), 6000);
       return;
     }
 
-    // 3. Lightweight metadata backup: Open photo selection modal to link computer photos with backup filenames
+    // Open photo selection modal so computer photos can be linked
     setActiveRestoreBackup(backup);
+    setBackupToast({
+      message: `✓ JSON yedeği okundu (${restoredPosts.length} fotoğraf). Tüm başlıklar, açıklamalar ve süreler önizlemeye aktarıldı. Bilgisayarınızdan fotoğrafları seçerek görselleri bağlayabilirsiniz.`,
+      type: 'info',
+    });
+    setTimeout(() => setBackupToast(null), 6000);
   };
 
   const handleCompleteRestoreWithPosts = (
@@ -494,26 +518,27 @@ export default function App() {
     ignoredCount?: number
   ) => {
     setPosts(restoredPosts);
-    const selIds =
-      backup.selectedPostIds && backup.selectedPostIds.length > 0
-        ? backup.selectedPostIds
-        : restoredPosts.map((p) => p.id);
+    const selIds = restoredPosts.map((p) => p.id);
     setSelectedPostIds(selIds);
 
-    // Reconstruct slides using restored posts
-    setSlides(
-      buildGroupedSlides(
-        restoredPosts,
-        selIds,
-        backup.defaultSlideDuration || defaultSlideDuration
-      )
+    // Reconstruct slides preserving custom user edits, titles, captions and group collages
+    const reconstructed = reconstructSlidesFromBackup(
+      backup,
+      restoredPosts,
+      backup.defaultSlideDuration || defaultSlideDuration
     );
+    setSlides(reconstructed);
 
     setActiveRestoreBackup(null);
+    // Instantly take user to preview screen
+    setActiveTab('editor');
 
-    const ignoredMsg = ignoredCount && ignoredCount > 0 ? ` (Yedekte ismi bulunmayan ${ignoredCount} fotoğraf elendi)` : '';
+    const ignoredMsg =
+      ignoredCount && ignoredCount > 0
+        ? ` (Yedekte ismi bulunmayan ${ignoredCount} fotoğraf koruma gereği elendi)`
+        : '';
     setBackupToast({
-      message: `✓ Harika! Yalnızca yedekteki ${restoredPosts.length} fotoğraf eşleştirilerek yüklendi!${ignoredMsg}`,
+      message: `✓ Harika! Yalnızca yedekteki ${restoredPosts.length} fotoğraf başarıyla eşleştirildi ve önizleme ekranına aktarıldı!${ignoredMsg}`,
       type: 'success',
     });
     setTimeout(() => setBackupToast(null), 6000);
@@ -613,6 +638,42 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Photo Connect Needed Banner for Restored Backups */}
+      {posts.some((p) => p.imageUrl.startsWith('data:image/svg+xml')) && (
+        <div className="w-full bg-sky-950/50 border-b border-sky-500/30 px-3 py-2 sm:px-6 shadow-sm">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-sky-200">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-500/20 text-sky-400 font-bold shrink-0 text-[11px]">
+                📷
+              </span>
+              <span>
+                <strong>Yedek verileriniz hazır:</strong> {posts.filter((p) => p.imageUrl.startsWith('data:image/svg+xml')).length} fotoğraf için bilgisayardan görsel bağlantısı bekleniyor (başlıklar ve açıklamalar önizlemeye yüklendi).
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {lastRestoredBackup && (
+                <button
+                  type="button"
+                  onClick={() => setActiveRestoreBackup(lastRestoredBackup)}
+                  className="rounded-lg bg-sky-500 hover:bg-sky-600 px-3 py-1 text-xs font-bold text-white shadow transition active:scale-95"
+                >
+                  Fotoğrafları Bilgisayardan Bağla
+                </button>
+              )}
+              {activeTab !== 'editor' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('editor')}
+                  className="rounded-lg bg-slate-800 hover:bg-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 border border-slate-700 transition"
+                >
+                  Önizleme Ekranına Git →
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-3 py-6 sm:px-6">

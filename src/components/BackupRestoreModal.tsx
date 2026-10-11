@@ -104,7 +104,9 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
           <div className="flex-1 overflow-y-auto max-h-48 rounded-xl border border-slate-800 bg-slate-950/60 p-2 space-y-1.5 divide-y divide-slate-800/60 pr-1">
             {backup.items.map((item, idx) => {
               const isMatched = matchedPosts.some(
-                (p) => p.filename?.toLowerCase() === item.filename.toLowerCase()
+                (p) =>
+                  p.filename?.toLowerCase() === item.filename.toLowerCase() &&
+                  !p.imageUrl.startsWith('data:image/svg+xml')
               );
 
               return (
@@ -158,6 +160,15 @@ export const BackupRestoreModal: React.FC<BackupRestoreModalProps> = ({
               <strong>Filtreleme Koruması:</strong> Sadece bu listedeki <strong className="text-white">{backup.items.length} adet fotoğraf</strong> yüklenecektir. Bilgisayardan tüm klasörü seçseniz bile yedekte ismi olmayan fotoğraflar <strong>otomatik olarak elenir ve projeye dahil edilmez</strong>.
             </span>
           </div>
+
+          {hasTriedMatching && matchedCount === 0 && (
+            <div className="flex items-center gap-2 rounded-xl bg-amber-950/60 border border-amber-500/40 p-2.5 text-xs text-amber-200">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+              <span>
+                Seçilen dosyalar yedekteki dosya adlarıyla eşleşmedi. Lütfen fotoğrafların ({backup.items[0]?.filename} vb.) bulunduğu klasörü seçin.
+              </span>
+            </div>
+          )}
 
           <input
             type="file"
