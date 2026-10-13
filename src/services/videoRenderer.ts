@@ -7,6 +7,7 @@ import {
   VideoResolutionQuality,
   VideoSlide,
 } from '../types/video';
+import { registerImageAspect } from './photoGroupingService';
 
 export interface RenderContext {
   canvas: HTMLCanvasElement;
@@ -128,6 +129,9 @@ export class VideoRenderer {
       newImg.onload = () => {
         this.imageCache.set(url, newImg);
         this.pendingLoads.delete(url);
+        if (newImg.naturalWidth && newImg.naturalHeight) {
+          registerImageAspect(url, newImg.naturalWidth, newImg.naturalHeight);
+        }
       };
       newImg.onerror = () => {
         const fallback = new Image();

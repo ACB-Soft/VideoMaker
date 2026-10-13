@@ -260,10 +260,18 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
       setIsProcessing(true);
       const croppedUrl = await cropImageCanvas(sourceImageUrl, crop);
 
+      const isWide =
+        activeAspect === '16:9' ||
+        activeAspect === '4:3' ||
+        activeAspect === '3:2' ||
+        activeAspect === '21:9' ||
+        (activeAspect === 'free' && crop.width / crop.height >= 1.25);
+
       const updated: InstagramPost = {
         ...post,
         originalImageUrl: post.originalImageUrl || post.imageUrl,
         imageUrl: croppedUrl,
+        isWide,
         crop: {
           ...crop,
           aspect: activeAspect,

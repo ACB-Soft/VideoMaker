@@ -42,6 +42,7 @@ import {
   Crop,
 } from 'lucide-react';
 import { ImageCropModal } from './ImageCropModal';
+import { isWidePhoto } from '../services/photoGroupingService';
 
 interface VideoTimelineEditorProps {
   slides: VideoSlide[];
@@ -62,6 +63,7 @@ interface VideoTimelineEditorProps {
   setIsMuted: (m: boolean) => void;
   onOpenExport: () => void;
   onDeleteSlide?: (slideId: string, postIds: string[]) => void;
+  onDeletePost?: (postId: string) => void;
   onUpdateSlide?: (updated: VideoSlide) => void;
 }
 
@@ -84,6 +86,7 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
   setIsMuted,
   onOpenExport,
   onDeleteSlide,
+  onDeletePost,
   onUpdateSlide,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -635,9 +638,14 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
                     <div className="absolute top-1 right-1 rounded bg-rose-500/80 px-1.5 py-0.5 text-[9px] font-bold text-white">
                       {slide.duration.toFixed(1)}s
                     </div>
+                    {isWidePhoto(slide.post) && (
+                      <div className="absolute bottom-1 left-1 rounded bg-amber-500/90 px-1.5 py-0.5 text-[8px] font-bold text-white shadow">
+                        Geniş (Tekli)
+                      </div>
+                    )}
                     {slide.posts && slide.posts.length > 1 && (
                       <div className="absolute bottom-1 left-1 rounded bg-sky-500/90 px-1.5 py-0.5 text-[8px] font-bold text-white shadow">
-                        Grup ({slide.posts.length} Görsel)
+                        3'lü Grup ({slide.posts.length} Görsel)
                       </div>
                     )}
                   </div>
@@ -773,31 +781,99 @@ export const VideoTimelineEditor: React.FC<VideoTimelineEditorProps> = ({
             </div>
 
             <div className="mt-4 space-y-4">
-              {/* Photo preview & Crop trigger */}
-              <div className="flex items-center justify-between p-2.5 rounded-xl border border-slate-700 bg-slate-950/80">
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <img
-                    src={editingSlide.post.imageUrl}
-                    alt=""
-                    className="h-11 w-11 object-cover rounded-lg border border-slate-700 shrink-0"
-                  />
-                  <div className="text-xs truncate">
-                    <span className="font-semibold text-white block truncate">
-                      {editingSlide.post.filename || 'Slayt Fotoğrafı'}
+              {/* Slide Photos list & individual Crop / Delete */}
+              <div>
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-300 mb-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="h-3.5 w-3.5 text-sky-400" />
+                    <span>Slayt Görselleri ({(editingSlide.posts && editingSlide.posts.length > 0 ? editingSlide.posts : [editingSlide.post]).length})</span>
+                  </span>
+                  {(editingSlide.posts?.length || 1) > 1 && (
+                    <span className="text-[10px] text-slate-400">
+                      Gruptan silinen fotoğraf yerine sıradaki kaydırılır
                     </span>
-                    <span className="text-[10px] text-sky-400">
-                      {editingSlide.post.crop ? `Kırpıldı: ${editingSlide.post.crop.aspect}` : 'Orijinal Boyut'}
-                    </span>
-                  </div>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setCroppingSlidePost(editingSlide.post)}
-                  className="flex items-center gap-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 px-3 py-1.5 text-xs font-bold text-white transition shadow shrink-0 active:scale-95"
-                >
-                  <Crop className="h-3.5 w-3.5" />
-                  <span>Kırp</span>
-                </button>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {(editingSlide.posts && editingSlide.posts.length > 0 ? editingSlide.posts : [editingSlide.post]).map((p, pIdx) => {
+                    const isWide = isWidePhoto(p);
+                    const totalInSlide = (editingSlide.posts && editingSlide.posts.length > 0 ? editingSlide.posts : [editingSlide.post]).length;
+
+                    return (
+                      <div
+                        key={p.id || pIdx}
+                        className="flex items-center justify-between p-2 rounded-xl border border-slate-800 bg-slate-950/80 gap-2"
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <img
+                            src={p.imageUrl}
+                            alt=""
+                            className="h-10 w-10 object-cover rounded-lg border border-slate-700 shrink-0"
+                          />
+                          <div className="text-xs truncate">
+                            <span className="font-semibold text-white block truncate">
+                              {p.filename || `Fotoğraf #${pIdx + 1}`}
+                            </span>
+                            <div className="flex items-center gap-1 text-[10px]">
+                              {isWide && (
+                                <span className="text-amber-400 font-bold">Geniş (16:9)</span>
+                              )}
+                              {p.crop && (
+                                <span className="text-sky-400">✂ {p.crop.aspect}</span>
+                              )}
+                              {!isWide && !p.crop && (
+                                <span className="text-slate-400">Standart</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setCroppingSlidePost(p)}
+                            className="flex items-center gap-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-500/30 px-2 py-1 text-[11px] font-semibold transition"
+                            title="Fotoğrafı Kırp (4:3, 16:9, 1:1 vb.)"
+                          >
+                            <Crop className="h-3 w-3" />
+                            <span>Kırp</span>
+                          </button>
+
+                          {onDeletePost && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeletePost(p.id);
+                                if (totalInSlide <= 1) {
+                                  setEditingSlide(null);
+                                } else {
+                                  setEditingSlide((prev) =>
+                                    prev
+                                      ? {
+                                          ...prev,
+                                          posts: prev.posts?.filter((it) => it.id !== p.id),
+                                          post:
+                                            prev.post.id === p.id && prev.posts
+                                              ? prev.posts.filter((it) => it.id !== p.id)[0] || prev.post
+                                              : prev.post,
+                                        }
+                                      : null
+                                  );
+                                }
+                              }}
+                              className="flex items-center gap-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 px-2 py-1 text-[11px] font-semibold transition"
+                              title="Bu fotoğrafı sil (aynı gönderiden sıradaki fotoğraf kaydırılır)"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              <span>Sil</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Duration */}

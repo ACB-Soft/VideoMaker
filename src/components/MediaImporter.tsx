@@ -35,6 +35,7 @@ import {
 } from '../services/instagramJsonParser';
 import { parseProjectBackup, ProjectBackupPayload, matchFilesWithBackup } from '../services/projectBackup';
 import { ImageCropModal } from './ImageCropModal';
+import { isWidePhoto } from '../services/photoGroupingService';
 
 interface MediaImporterProps {
   posts: InstagramPost[];
@@ -1037,8 +1038,16 @@ export const MediaImporter: React.FC<MediaImporterProps> = ({
                   {/* Gradient shadow overlay */}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30" />
 
-                  {/* Top-Right Sequence Badge & Crop Indicator */}
+                  {/* Top-Right Sequence Badge, Wide Badge & Crop Indicator */}
                   <div className="absolute top-2.5 right-2.5 z-10 flex items-center gap-1.5">
+                    {isWidePhoto(post) && (
+                      <span
+                        className="rounded-lg bg-amber-500/90 text-white font-bold text-[9px] px-2 py-0.5 shadow-md border border-amber-300/40 backdrop-blur-sm"
+                        title="Geniş fotoğraf (16:9 vb.) - Slaytta tek başına yer alır"
+                      >
+                        Geniş (Tekli)
+                      </span>
+                    )}
                     {post.crop && (
                       <span
                         className="rounded-lg bg-sky-500/90 text-white font-bold text-[9px] px-2 py-0.5 shadow-md border border-sky-300/40 backdrop-blur-sm"

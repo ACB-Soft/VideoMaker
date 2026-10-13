@@ -52,6 +52,8 @@ export interface InstagramPost {
   comments?: number;
   date?: string;
   tags?: string[];
+  isWide?: boolean;
+  aspectRatio?: number;
   author?: {
     username?: string;
     fullName?: string;

@@ -9,6 +9,7 @@ import {
   ImageCropData,
 } from '../types/video';
 import { cropImageCanvas } from './imageCropService';
+import { isWidePhoto, buildPostGroupedSlides } from './photoGroupingService';
 
 export interface BackupItemMetadata {
   filename: string;
@@ -22,6 +23,8 @@ export interface BackupItemMetadata {
   tags?: string[];
   imageUrl?: string; // Optional (if present from data url or previous export)
   crop?: ImageCropData; // Crop metadata (aspect ratio, coordinates)
+  isWide?: boolean; // Standalone wide photo flag (e.g. 16:9)
+  aspectRatio?: number;
 }
 
 export interface BackupSlideMetadata {
@@ -185,6 +188,8 @@ export function createLightweightBackupData(params: {
       date: post.date,
       tags: post.tags,
       crop: post.crop,
+      isWide: isWidePhoto(post),
+      aspectRatio: post.aspectRatio,
     };
   });
 
@@ -305,6 +310,8 @@ export function parseProjectBackup(rawJson: string): ProjectBackupPayload {
           tags: it.tags,
           imageUrl: it.imageUrl,
           crop: it.crop,
+          isWide: it.isWide,
+          aspectRatio: it.aspectRatio,
         }))
       : Array.isArray(parsed.posts)
       ? parsed.posts.map((p: any, idx: number) => ({
@@ -319,6 +326,8 @@ export function parseProjectBackup(rawJson: string): ProjectBackupPayload {
           tags: p.tags,
           imageUrl: p.imageUrl,
           crop: p.crop,
+          isWide: p.isWide,
+          aspectRatio: p.aspectRatio,
         }))
       : [];
 
@@ -379,6 +388,8 @@ export function createRestoredPostsFromBackup(backup: ProjectBackupPayload): Ins
       date: item.date || 'Yedek',
       tags: item.tags || ['tanitim'],
       crop: item.crop,
+      isWide: item.isWide,
+      aspectRatio: item.aspectRatio,
     };
   });
 }
@@ -427,33 +438,60 @@ export function reconstructSlidesFromBackup(
       }
 
       if (slidePosts.length > 0) {
-        const primary = slidePosts[0];
+        // Enforce rule: wide photos (e.g. 16:9) must be standalone groups!
+        const wideInSlide = slidePosts.filter(isWidePhoto);
+        const standardInSlide = slidePosts.filter((p) => !isWidePhoto(p));
+
         const sharedTitle =
           bs.groupTitle ||
           bs.groupName ||
-          primary.groupTitle ||
-          primary.groupName ||
+          slidePosts[0].groupTitle ||
+          slidePosts[0].groupName ||
           'Faaliyet Tanıtımı';
         const sharedCaption =
-          bs.captionText !== undefined ? bs.captionText : (primary.caption || '');
+          bs.captionText !== undefined ? bs.captionText : (slidePosts[0].caption || '');
         const duration =
-          bs.duration || primary.duration || backup.defaultSlideDuration || defaultDuration;
+          bs.duration || slidePosts[0].duration || backup.defaultSlideDuration || defaultDuration;
 
-        slides.push({
-          id: bs.id || `slide-restored-${sIdx}`,
-          type: (bs.type as any) || (slidePosts.length > 1 ? 'group-collage' : 'image'),
-          post: primary,
-          posts: slidePosts,
-          duration,
-          transition: (bs.transition as any) || 'fade',
-          transitionDuration: 0.6,
-          groupTitle: sharedTitle,
-          groupName: sharedTitle,
-          captionText: sharedCaption,
-          showCaption: bs.showCaption !== undefined ? bs.showCaption : true,
-          showAuthorBadge: false,
-          zoomEffect: (bs.zoomEffect as any) || 'static',
-          groupId: bs.groupId || primary.groupId,
+        // 1. Add standard photos if any
+        if (standardInSlide.length > 0) {
+          const primary = standardInSlide[0];
+          slides.push({
+            id: bs.id || `slide-restored-${sIdx}`,
+            type: standardInSlide.length > 1 ? 'group-collage' : 'image',
+            post: primary,
+            posts: standardInSlide,
+            duration,
+            transition: (bs.transition as any) || 'fade',
+            transitionDuration: 0.6,
+            groupTitle: sharedTitle,
+            groupName: sharedTitle,
+            captionText: sharedCaption,
+            showCaption: bs.showCaption !== undefined ? bs.showCaption : true,
+            showAuthorBadge: false,
+            zoomEffect: (bs.zoomEffect as any) || 'static',
+            groupId: bs.groupId || primary.groupId,
+          });
+        }
+
+        // 2. Add wide photos as standalone slides
+        wideInSlide.forEach((wp, wIdx) => {
+          slides.push({
+            id: `slide-wide-${wp.id}-${sIdx}-${wIdx}`,
+            type: 'image',
+            post: wp,
+            posts: [wp],
+            duration,
+            transition: (bs.transition as any) || 'fade',
+            transitionDuration: 0.6,
+            groupTitle: sharedTitle,
+            groupName: sharedTitle,
+            captionText: wp.caption || sharedCaption,
+            showCaption: bs.showCaption !== undefined ? bs.showCaption : true,
+            showAuthorBadge: false,
+            zoomEffect: (bs.zoomEffect as any) || 'static',
+            groupId: bs.groupId || wp.groupId,
+          });
         });
       }
     });
@@ -463,65 +501,13 @@ export function reconstructSlidesFromBackup(
     }
   }
 
-  // Strategy B: Group posts by groupId (max 3 images per collage slide)
-  const groupsMap = new Map<string, InstagramPost[]>();
-  posts.forEach((p) => {
-    const gKey = p.groupId || 'group-single-' + p.id;
-    if (!groupsMap.has(gKey)) {
-      groupsMap.set(gKey, []);
-    }
-    groupsMap.get(gKey)!.push(p);
-  });
-
-  const fallbackSlides: VideoSlide[] = [];
-  groupsMap.forEach((groupPosts, gKey) => {
-    const maxPerGroup = 3;
-    for (let c = 0; c < groupPosts.length; c += maxPerGroup) {
-      const chunk = groupPosts.slice(c, c + maxPerGroup);
-      const primary = chunk[0];
-      const sharedTitle = primary.groupTitle || primary.groupName || 'Faaliyet Tanıtımı';
-      const sharedCaption = primary.caption || '';
-      const dur = primary.duration || backup.defaultSlideDuration || defaultDuration;
-
-      if (chunk.length === 1) {
-        fallbackSlides.push({
-          id: `slide-${primary.id}-${c}`,
-          type: 'image',
-          post: primary,
-          posts: [primary],
-          duration: dur,
-          transition: 'fade',
-          transitionDuration: 0.6,
-          groupTitle: sharedTitle,
-          groupName: sharedTitle,
-          captionText: sharedCaption,
-          showCaption: true,
-          showAuthorBadge: false,
-          zoomEffect: 'static',
-          groupId: primary.groupId,
-        });
-      } else {
-        fallbackSlides.push({
-          id: `slide-group-${gKey}-${c}`,
-          type: 'group-collage',
-          post: primary,
-          posts: chunk,
-          duration: Math.max(dur, defaultDuration),
-          transition: 'fade',
-          transitionDuration: 0.6,
-          groupTitle: sharedTitle,
-          groupName: sharedTitle,
-          captionText: sharedCaption,
-          showCaption: true,
-          showAuthorBadge: false,
-          zoomEffect: 'static',
-          groupId: gKey,
-        });
-      }
-    }
-  });
-
-  return fallbackSlides;
+  // Strategy B: Group posts using buildPostGroupedSlides ensuring wide photos are alone
+  // and photos belonging to the same post are grouped in 3s and shift cleanly on delete
+  return buildPostGroupedSlides(
+    posts,
+    posts.map((p) => p.id),
+    backup.defaultSlideDuration || defaultDuration
+  );
 }
 
 /**
