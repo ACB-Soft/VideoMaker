@@ -164,11 +164,19 @@ export function buildPostGroupedSlides(
       }
     });
 
-    // Chunk standard photos into groups of at most 3
-    // Because photos belonging to the same post are collected here,
-    // when a photo is deleted, the remaining standard photos of THIS post
-    // automatically refill earlier chunks up to 3!
-    const maxPerGroup = 3;
+    // Determine group size based on aspect ratio
+    // 1:1 -> max 3, 4:3 -> max 2
+    let maxPerGroup = 3;
+    if (standardPosts.length > 0) {
+      const primary = standardPosts[0];
+      const aspect = primary.crop?.aspect || 'free';
+      if (aspect === '4:3') {
+        maxPerGroup = 2;
+      } else if (aspect === '1:1') {
+        maxPerGroup = 3;
+      }
+    }
+
     const standardChunks: InstagramPost[][] = [];
     for (let i = 0; i < standardPosts.length; i += maxPerGroup) {
       standardChunks.push(standardPosts.slice(i, i + maxPerGroup));
