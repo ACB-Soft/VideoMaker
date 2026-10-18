@@ -262,10 +262,8 @@ export const ImageCropModal: React.FC<ImageCropModalProps> = ({
 
       const isWide =
         activeAspect === '16:9' ||
-        activeAspect === '4:3' ||
-        activeAspect === '3:2' ||
         activeAspect === '21:9' ||
-        (activeAspect === 'free' && crop.width / crop.height >= 1.25);
+        (activeAspect === 'free' && crop.width / crop.height >= 1.7);
 
       const updated: InstagramPost = {
         ...post,

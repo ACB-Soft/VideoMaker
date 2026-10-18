@@ -16,16 +16,18 @@ export function isWidePhoto(post: InstagramPost): boolean {
   // Check crop aspect ratio
   if (post.crop) {
     const aspect = post.crop.aspect;
-    if (['16:9', '4:3', '3:2', '21:9', '16:10'].includes(aspect)) {
+    // 16:9 and wider
+    if (['16:9', '21:9'].includes(aspect)) {
       return true;
     }
-    if (['9:16', '1:1', '4:5', '3:4'].includes(aspect)) {
+    // 4:3, 3:2, 16:10, 1:1, 4:5, 3:4, 9:16 etc are NOT wide
+    if (['4:3', '3:2', '16:10', '9:16', '1:1', '4:5', '3:4'].includes(aspect)) {
       return false;
     }
+    // Free crop: threshold >= 1.7 (between 16:10 and 16:9)
     if (post.crop.width && post.crop.height) {
-      // If width % is substantially larger than height % in free crop
       const cropRatio = post.crop.width / post.crop.height;
-      if (cropRatio >= 1.25) return true;
+      return cropRatio >= 1.7;
     }
   }
 
