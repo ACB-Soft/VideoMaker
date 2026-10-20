@@ -196,9 +196,9 @@ export function buildPostGroupedSlides(
         existingBySlideId.get(`slide-group-${gKey}-${chunkCounter}`);
 
       const sharedTitle =
-        existing?.groupTitle ||
         primary.groupTitle ||
         primary.groupName ||
+        existing?.groupTitle ||
         'Faaliyet Tanıtımı';
       const sharedCaption =
         existing?.captionText !== undefined
@@ -262,9 +262,9 @@ export function buildPostGroupedSlides(
         existingBySlideId.get(`slide-wide-${widePost.id}`);
 
       const sharedTitle =
-        existing?.groupTitle ||
         widePost.groupTitle ||
         widePost.groupName ||
+        existing?.groupTitle ||
         'Faaliyet Tanıtımı';
       const sharedCaption =
         existing?.captionText !== undefined
